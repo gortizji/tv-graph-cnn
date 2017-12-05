@@ -40,10 +40,10 @@ def wave_seq(Wphi, b, Kstart, T, f):
     Nv = Wphi.shape[0]
     X = np.zeros((Nv, Kstart+T))
     phi = 2 * np.pi * np.random.rand()
-
-    X[:,0] = (b * square(phi)).T
+    duty = np.random.rand()
+    X[:,0] = (b * 0.5*(1-square(phi, duty=duty))).T
     for t in range(1, Kstart+T):
-        X[:,t] = Wphi.dot(X[:,t-1]).T + (b * square(f*t+phi, duty=np.random.rand())).T
+        X[:,t] = Wphi.dot(X[:,t-1]).T + (b *  0.5 * (1-square(f*t+phi, duty=duty))).T
     return X[:, Kstart:Kstart+T]
 
 

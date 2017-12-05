@@ -304,6 +304,7 @@ def run_training(mb_source, L, test_data, test_labels):
         test_feed_dict = {x: test_data, y_: test_labels_one_hot, dropout: 1}
 
         # Start training loop
+        epoch_count = 0
         for step in range(MAX_STEPS):
 
             start_time = time.time()
@@ -316,6 +317,11 @@ def run_training(mb_source, L, test_data, test_labels):
 
             duration = time.time() - start_time
 
+            if step % (FLAGS.num_train // FLAGS.batch_size) == 0:
+                print("Epoch %d" % epoch_count)
+                print("--------------------")
+                epoch_count += 1
+
             # Write the summaries and print an overview fairly often.
             if step % 10 == 0:
                 # Print status to stdout.
@@ -327,12 +333,14 @@ def run_training(mb_source, L, test_data, test_labels):
                 summary_writer.flush()
 
             # Save a checkpoint and evaluate the model periodically.
-            if (step + 1) % 50 == 0 or (step + 1) == MAX_STEPS:
+            if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model.ckpt')
                 saver.save(sess, checkpoint_file, global_step=step)
 
                 accuracy_value = sess.run(accuracy, feed_dict=test_feed_dict)
+                print("--------------------")
                 print('Test accuracy = %.2f' % accuracy_value)
+                print("====================")
 
 
 def main(_):
@@ -342,7 +350,7 @@ def main(_):
     tf.gfile.MakeDirs(FLAGS.log_dir)
 
     # Initialize data
-    G = graphs.ErdosRenyi(FLAGS.num_vertices, 0.4, seed=42)
+    G = graphs.ErdosRenyi(FLAGS.num_vertices, 0.1, seed=42)
     G.compute_laplacian("normalized")
     L = _initialize_graph_laplacian(G)
     W = (G.W).astype(np.float32)
@@ -367,8 +375,8 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=100,
-        help='Number of steps to run trainer.'
+        default=5,
+        help='Number of epochs to run trainer.'
     )
     parser.add_argument(
         '--num_train',

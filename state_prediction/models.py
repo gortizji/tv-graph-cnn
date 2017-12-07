@@ -76,6 +76,7 @@ def fir_tv_fc_fn(x, L, output_units, time_filter_order, vertex_filter_order, num
         with tf.name_scope("dropout"):
             keep_prob = tf.placeholder(tf.float32)
             dropout = tf.nn.dropout(graph_conv, keep_prob=keep_prob)
+
     with tf.name_scope("fc"):
         fc_input = tf.layers.flatten(dropout)
         fc = tf.layers.dense(

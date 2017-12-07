@@ -116,7 +116,7 @@ def run_training(mb_source, L, test_data):
             # Write the summaries and print an overview fairly often.
             if step % 10 == 0:
                 # Print status to stdout.
-                print('Step %d: mse = %.2f (%.3f sec)' % (step, metric.eval(), duration))
+                print('Step %d: rmse = %.2f (%.3f sec)' % (step, metric.eval(), duration))
                 # Update the events file.
                 summary_str = sess.run(summary, feed_dict=feed_dict)
                 summary_writer.add_summary(summary_str, step)
@@ -129,7 +129,7 @@ def run_training(mb_source, L, test_data):
 
                 sess.run(metric_opt, feed_dict=test_feed_dict)
                 print("--------------------")
-                print('Test mse = %.2f' % metric.eval())
+                print('Test rmse = %.2f' % metric.eval())
                 print("====================")
 
 
@@ -145,10 +145,10 @@ def main(_):
     L = initialize_laplacian_tensor(G.W)
     W = (G.W).astype(np.float32)
 
-    train_data, _ = generate_wave_samples(FLAGS.num_train, W, T=FLAGS.num_frames, sigma=FLAGS.sigma)
+    train_data, _ = generate_wave_samples(FLAGS.num_train, W, T=FLAGS.num_frames, sigma=FLAGS.sigma, signal="cosine")
     train_mb_source = TemporalGraphBatchSource(train_data)
 
-    test_data, _ = generate_wave_samples(FLAGS.num_test, W, T=FLAGS.num_frames, sigma=FLAGS.sigma)
+    test_data, _ = generate_wave_samples(FLAGS.num_test, W, T=FLAGS.num_frames, sigma=FLAGS.sigma, signal="cosine")
 
     # Run training and evaluation loop
     run_training(train_mb_source, L, test_data)
@@ -225,7 +225,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--sigma',
         type=float,
-        default=0.01,
+        default=0.1,
         help='Noise typical deviation.'
     )
 

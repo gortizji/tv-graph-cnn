@@ -9,8 +9,8 @@ from pygsp import graphs
 import tensorflow as tf
 
 from graph_utils import initialize_laplacian_tensor
-from source_localization.models import fir_tv_fc_fn
-from synthetic_data.data_generation import generate_wave_samples
+from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn
+from synthetic_data.data_generation import generate_spectral_samples
 
 FLAGS = None
 TEMPDIR = "/users/gortizjimenez/tmp/"
@@ -46,7 +46,7 @@ class TemporalGraphBatchSource:
 
 def _fill_feed_dict(mb_source, x, y, dropout):
     data, labels = mb_source.next_batch(FLAGS.batch_size)
-    labels_one_hot = tf.one_hot(labels, FLAGS.num_vertices).eval()
+    labels_one_hot = tf.one_hot(labels, FLAGS.num_classes).eval()
     feed_dict = {x: data, y: labels_one_hot, dropout: 0.5}
     return feed_dict
 
@@ -56,11 +56,12 @@ def run_training(mb_source, L, test_data, test_labels):
 
     # Create data placeholders
     x = tf.placeholder(tf.float32, [None, FLAGS.num_vertices, FLAGS.num_frames])
-    y_ = tf.placeholder(tf.float32, [None, FLAGS.num_vertices])
+    y_ = tf.placeholder(tf.float32, [None, FLAGS.num_classes])
 
     # Initialize model
-    logits, dropout = fir_tv_fc_fn(x, L, FLAGS.num_vertices, FLAGS.time_filter_order, FLAGS.filter_order, FLAGS.num_filters)
-    # logits, dropout = cheb_fc_fn(x, L, FLAGS.num_vertices, FLAGS.filter_order, FLAGS.num_filters)
+    logits, dropout = fir_tv_fc_fn(x, L, FLAGS.num_classes, FLAGS.time_filter_order, FLAGS.filter_order, FLAGS.num_filters)
+    # logits, dropout = cheb_fc_fn(x, L, FLAGS.num_classes, FLAGS.filter_order, FLAGS.num_filters)
+    # logits, dropout = jtv_cheb_fc_fn(x, L, FLAGS.num_classes, FLAGS.filter_order, FLAGS.num_filters)
     # logits, dropout = fc_fn(x, FLAGS.num_vertices)
 
     # Define loss
@@ -69,7 +70,7 @@ def run_training(mb_source, L, test_data, test_labels):
         loss = tf.reduce_mean(cross_entropy)
         tf.summary.scalar('xentropy', loss)
 
-    # Define metric
+        # Define metric
     with tf.name_scope("metric"):
         correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(y_, 1))
         correct_prediction = tf.cast(correct_prediction, tf.float32)
@@ -97,7 +98,7 @@ def run_training(mb_source, L, test_data, test_labels):
 
         MAX_STEPS = FLAGS.num_epochs * FLAGS.num_train // FLAGS.batch_size
 
-        test_labels_one_hot = tf.one_hot(test_labels, FLAGS.num_vertices).eval()
+        test_labels_one_hot = tf.one_hot(test_labels, FLAGS.num_classes).eval()
         test_feed_dict = {x: test_data, y_: test_labels_one_hot, dropout: 1}
 
         # Start training loop
@@ -150,12 +151,27 @@ def main(_):
     G = graphs.ErdosRenyi(FLAGS.num_vertices, 0.1, seed=42)
     G.compute_laplacian("normalized")
     L = initialize_laplacian_tensor(G.W)
-    W = (G.W).astype(np.float32)
 
-    train_data, train_labels = generate_wave_samples(FLAGS.num_train, W, T=FLAGS.num_frames, sigma=FLAGS.sigma)
+    train_data, train_labels = generate_spectral_samples(
+        N=FLAGS.num_train,
+        G=G,
+        T=FLAGS.num_frames,
+        f_h=FLAGS.f_h,
+        f_l=FLAGS.f_h,
+        lambda_h=FLAGS.lambda_h,
+        lambda_l=FLAGS.lambda_l,
+        sigma=FLAGS.sigma)
     train_mb_source = TemporalGraphBatchSource(train_data, train_labels)
 
-    test_data, test_labels = generate_wave_samples(FLAGS.num_test, W, T=FLAGS.num_frames, sigma=FLAGS.sigma)
+    test_data, test_labels = generate_spectral_samples(
+        N=FLAGS.num_test,
+        G=G,
+        T=FLAGS.num_frames,
+        f_h=FLAGS.f_h,
+        f_l=FLAGS.f_h,
+        lambda_h=FLAGS.lambda_h,
+        lambda_l=FLAGS.lambda_l,
+        sigma=FLAGS.sigma)
 
     # Run training and evaluation loop
     run_training(train_mb_source, L, test_data, test_labels)
@@ -166,19 +182,19 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=1e-5,
+        default=1e-4,
         help='Initial learning rate.'
     )
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=5,
+        default=20,
         help='Number of epochs to run trainer.'
     )
     parser.add_argument(
         '--num_train',
         type=int,
-        default=5000,
+        default=2000,
         help='Number of training samples.'
     )
     parser.add_argument(
@@ -208,19 +224,19 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_frames',
         type=int,
-        default=24,
+        default=128,
         help='Number of temporal frames.'
     )
     parser.add_argument(
         '--filter_order',
         type=int,
-        default=5,
+        default=6,
         help='Convolution vertex order.'
     )
     parser.add_argument(
         '--time_filter_order',
         type=int,
-        default=5,
+        default=6,
         help='Convolution time order.'
     )
     parser.add_argument(
@@ -230,11 +246,40 @@ if __name__ == '__main__':
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
+        '--f_h',
+        type=int,
+        default=80,
+        help='High pass cut frequency (time)'
+    )
+    parser.add_argument(
+        '--f_l',
+        type=int,
+        default=10,
+        help='Low pass cut frequency (time)'
+    )
+    parser.add_argument(
+        '--lambda_h',
+        type=int,
+        default=80,
+        help='High pass cut frequency (graph)'
+    )
+    parser.add_argument(
+        '--lambda_l',
+        type=int,
+        default=15,
+        help='low pass cut frequency (graph)'
+    )
+    parser.add_argument(
         '--sigma',
         type=float,
-        default=0.01,
-        help='Noise typical deviation.'
+        default=10,
+        help='Source standard deviation.'
     )
-
+    parser.add_argument(
+        '--num_classes',
+        type=int,
+        default=4,
+        help='Number of classes to separate.'
+    )
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

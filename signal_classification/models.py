@@ -11,7 +11,7 @@ def weight_variable(shape):
 
 def bias_variable(shape):
     """bias_variable generates a bias variable of a given shape."""
-    initial = tf.zeros(shape=shape, dtype=tf.float32)
+    initial = 0.1 * tf.ones(shape=shape, dtype=tf.float32)
     return tf.Variable(initial)
 
 
@@ -45,7 +45,7 @@ def fc_fn(x, output_units):
         fc = tf.layers.dense(
             inputs=fc_input,
             units=output_units,
-            activation=tf.nn.relu,
+            activation=None,
             use_bias=True
         )
 
@@ -81,7 +81,7 @@ def fir_tv_fc_fn(x, L, output_units, time_filter_order, vertex_filter_order, num
         fc = tf.layers.dense(
             inputs=fc_input,
             units=output_units,
-            activation=tf.nn.relu,
+            activation=None,
             use_bias=True,
         )
     return fc, keep_prob
@@ -114,7 +114,7 @@ def cheb_fc_fn(x, L, output_units, filter_order, num_filters):
         fc = tf.layers.dense(
             inputs=fc_input,
             units=output_units,
-            activation=tf.nn.relu,
+            activation=None,
             use_bias=True
         )
 
@@ -148,7 +148,7 @@ def jtv_cheb_fc_fn(x, L, output_units, filter_order, num_filters):
         fc = tf.layers.dense(
             inputs=fc_input,
             units=output_units,
-            activation=tf.nn.relu,
+            activation=None,
             use_bias=True
         )
 

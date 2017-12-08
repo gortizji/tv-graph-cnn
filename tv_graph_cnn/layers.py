@@ -1,9 +1,9 @@
 import tensorflow as tf
 
 
-def fir_tv_filtering_matmul(x, S, h, b, kernel="naive"):
+def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
     """
-    Performs FIR-TV (Time-vertex) filtering using left to right computations (all matrix multiplications)
+    Performs FIR-TV (Time-vertex) filtering using left to right computations (using einsum for matrix multiplication)
     K-1
     --
     \     k
@@ -29,27 +29,24 @@ def fir_tv_filtering_matmul(x, S, h, b, kernel="naive"):
 
     with tf.name_scope("tv_conv"):
         for t in range(T):
-            if t <= T-M:
-                xt = x[:, :, t:t+M]  # BxNxM
+            if t <= T - M:
+                xt = x[:, :, t:t + M]  # BxNxM
             else:
                 # Pad with zeros
-                xt = tf.zeros_like(x[:, :, 0:(M-1)-(T-1-t)])
+                xt = tf.zeros_like(x[:, :, 0:(M - 1) - (T - 1 - t)])
                 xt = tf.concat([xt, x[:, :, t:]], axis=2)
 
             # Use einstein summation for efficiency and compactness
             SKxt = tf.einsum("abc,dce->dabe", SK, xt)  # BxKxNxM
-            # SKxt = tf.einsum("kij,Bjm->Bkim", SK, xt)  # BxKxNxM
             Yt = tf.einsum("abcd,bde->abce", SKxt, h)  # BxKxNxF
-            # Yt = tf.einsum("Bkim,kmf->Bkif", SKxt, h)  # BxKxNxF
             Yt = tf.einsum("abcd->acd", Yt)  # BxNxF
-            # Yt = tf.einsum("Bkif->Bif", Yt)  # BxNxF
             Yt = tf.reshape(Yt, [-1, N, 1, F])  # BxNx1xF
 
-            if t==0:
+            if t == 0:
                 Y = Yt
             else:
                 Y = tf.concat([Y, Yt], axis=2)  # BxNxTxF
-        # Y += b
+        Y += b
     return Y
 
 
@@ -158,7 +155,7 @@ def _vertex_fir_kernel(S, K):
     Sk = tf.eye(N)
     St = list()
     St.append(tf.reshape(Sk, [1, N, N]))
-    for k in range(K-1):
+    for k in range(K - 1):
         Sk = tf.sparse_tensor_dense_matmul(S, Sk)
         St.append(tf.reshape(Sk, [1, N, N]))
 
@@ -225,4 +222,3 @@ def _chebyshev_basis(x, L, K):
 
     xt = tf.transpose(xt, perm=[3, 1, 2, 0])  # N x Nv x T x K
     return xt
-

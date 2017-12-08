@@ -9,7 +9,7 @@ from pygsp import graphs
 import tensorflow as tf
 
 from graph_utils import initialize_laplacian_tensor
-from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn
+from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn
 from synthetic_data.data_generation import generate_spectral_samples
 
 FLAGS = None
@@ -17,49 +17,65 @@ TEMPDIR = "/users/gortizjimenez/tmp/"
 
 
 class TemporalGraphBatchSource:
-    def __init__(self, data, labels):
+    def __init__(self, data, labels, repeat=False):
         self.data = data
         self.labels = labels
         self.indices = np.random.permutation(self.dataset_length)
         self.idx = 0
+        self.repeat = repeat
+        self.end = False
 
     @property
     def dataset_length(self):
         return self.data.shape[0]
 
     def next_batch(self, batch_size):
+        if self.end:
+            if not self.repeat:
+                return None, self.end
+            else:
+                self.end = False
 
         end_idx = self.idx + batch_size
 
         if end_idx < self.dataset_length:
             batch = [self.data[self.indices[self.idx:end_idx]], self.labels[self.indices[self.idx:end_idx]]]
         else:
+            self.end = True
             batch = [self.data[self.indices[self.idx:]], self.labels[self.indices[self.idx:]]]
-            end_idx = end_idx % self.dataset_length
-            self.indices = np.random.permutation(self.dataset_length)
-            batch[0] = np.concatenate((batch[0], self.data[self.indices[:end_idx]]), axis=0)
-            batch[1] = np.concatenate((batch[1], self.labels[self.indices[:end_idx]]), axis=0)
+            if self.repeat:
+                end_idx = end_idx % self.dataset_length
+                self.indices = np.random.permutation(self.dataset_length)
+                batch[0] = np.concatenate((batch[0], self.data[self.indices[:end_idx]]), axis=0)
+                batch[1] = np.concatenate((batch[1], self.labels[self.indices[:end_idx]]), axis=0)
         self.idx = end_idx
 
-        return batch
+        return batch, self.end
+
+    def restart(self):
+        self.end = False
+        self.idx = 0
 
 
-def _fill_feed_dict(mb_source, x, y, dropout):
-    data, labels = mb_source.next_batch(FLAGS.batch_size)
+def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
+    (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
     labels_one_hot = tf.one_hot(labels, FLAGS.num_classes).eval()
-    feed_dict = {x: data, y: labels_one_hot, dropout: 0.5}
-    return feed_dict
+    feed_dict = {x: data, y: labels_one_hot, dropout: 0.5 if is_training else 1, phase: is_training}
+    still_data = not is_end
+    return feed_dict, still_data
 
 
-def run_training(mb_source, L, test_data, test_labels):
+def run_training(L, train_mb_source, test_mb_source):
     """Performs training and evaluation."""
 
     # Create data placeholders
-    x = tf.placeholder(tf.float32, [None, FLAGS.num_vertices, FLAGS.num_frames])
+    x = tf.placeholder(tf.float32, [None, FLAGS.num_vertices, FLAGS.num_frames, 1])
     y_ = tf.placeholder(tf.float32, [None, FLAGS.num_classes])
 
     # Initialize model
-    logits, dropout = fir_tv_fc_fn(x, L, FLAGS.num_classes, FLAGS.time_filter_order, FLAGS.filter_order, FLAGS.num_filters)
+    # logits, dropout = fir_tv_fc_fn(x, L, FLAGS.num_classes, FLAGS.time_filter_order, FLAGS.filter_order, FLAGS.num_filters)
+    logits, dropout, phase = deep_fir_tv_fc_fn(x, L, FLAGS.num_classes, FLAGS.time_filter_orders,
+                                               FLAGS.vertex_filter_orders, FLAGS.num_filters, FLAGS.poolings)
     # logits, dropout = cheb_fc_fn(x, L, FLAGS.num_classes, FLAGS.filter_order, FLAGS.num_filters)
     # logits, dropout = jtv_cheb_fc_fn(x, L, FLAGS.num_classes, FLAGS.filter_order, FLAGS.num_filters)
     # logits, dropout = fc_fn(x, FLAGS.num_vertices)
@@ -76,6 +92,8 @@ def run_training(mb_source, L, test_data, test_labels):
         correct_prediction = tf.cast(correct_prediction, tf.float32)
         accuracy = tf.reduce_mean(correct_prediction)
         tf.summary.scalar('accuracy', accuracy)
+
+
 
     # Select optimizer
     optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
@@ -98,16 +116,13 @@ def run_training(mb_source, L, test_data, test_labels):
 
         MAX_STEPS = FLAGS.num_epochs * FLAGS.num_train // FLAGS.batch_size
 
-        test_labels_one_hot = tf.one_hot(test_labels, FLAGS.num_classes).eval()
-        test_feed_dict = {x: test_data, y_: test_labels_one_hot, dropout: 1}
-
         # Start training loop
         epoch_count = 0
         for step in range(MAX_STEPS):
 
             start_time = time.time()
 
-            feed_dict = _fill_feed_dict(mb_source, x, y_, dropout)
+            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y_, dropout, phase, True)
 
             # Perform one training iteration
             _, loss_value = sess.run([opt_train, loss],
@@ -131,13 +146,19 @@ def run_training(mb_source, L, test_data, test_labels):
                 summary_writer.flush()
 
             # Save a checkpoint and evaluate the model periodically.
-            if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
+            #if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model.ckpt')
                 saver.save(sess, checkpoint_file, global_step=step)
 
-                accuracy_value = sess.run(accuracy, feed_dict=test_feed_dict)
+                still_data = True
+                test_accuracies = []
+                test_mb_source.restart()
+                while still_data:
+                    test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y_, dropout, phase, False)
+                    test_accuracies.append(sess.run(accuracy, feed_dict=test_feed_dict))
+
                 print("--------------------")
-                print('Test accuracy = %.2f' % accuracy_value)
+                print('Test accuracy = %.2f' % np.mean(test_accuracies))
                 print("====================")
 
 
@@ -148,12 +169,12 @@ def main(_):
     tf.gfile.MakeDirs(FLAGS.log_dir)
 
     # Initialize data
-    G = graphs.ErdosRenyi(FLAGS.num_vertices, 0.1, seed=42)
+    G = graphs.ErdosRenyi(FLAGS.num_vertices, 0.1)
     G.compute_laplacian("normalized")
     L = initialize_laplacian_tensor(G.W)
 
     train_data, train_labels = generate_spectral_samples(
-        N=FLAGS.num_train,
+        N=FLAGS.num_train // 4,
         G=G,
         T=FLAGS.num_frames,
         f_h=FLAGS.f_h,
@@ -164,7 +185,7 @@ def main(_):
     train_mb_source = TemporalGraphBatchSource(train_data, train_labels)
 
     test_data, test_labels = generate_spectral_samples(
-        N=FLAGS.num_test,
+        N=FLAGS.num_test // 4,
         G=G,
         T=FLAGS.num_frames,
         f_h=FLAGS.f_h,
@@ -173,8 +194,10 @@ def main(_):
         lambda_l=FLAGS.lambda_l,
         sigma=FLAGS.sigma)
 
+    test_mb_source = TemporalGraphBatchSource(test_data, test_labels, repeat=False)
+
     # Run training and evaluation loop
-    run_training(train_mb_source, L, test_data, test_labels)
+    run_training(L, train_mb_source,  test_mb_source)
 
 
 if __name__ == '__main__':
@@ -194,13 +217,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_train',
         type=int,
-        default=2000,
+        default=20000,
         help='Number of training samples.'
     )
     parser.add_argument(
         '--num_test',
         type=int,
-        default=200,
+        default=1000,
         help='Number of test samples.'
     )
     parser.add_argument(
@@ -228,22 +251,28 @@ if __name__ == '__main__':
         help='Number of temporal frames.'
     )
     parser.add_argument(
-        '--filter_order',
-        type=int,
-        default=6,
+        '--vertex_filter_orders',
+        type=list,
+        default=[3, 3, 3],
         help='Convolution vertex order.'
     )
     parser.add_argument(
-        '--time_filter_order',
-        type=int,
-        default=6,
+        '--time_filter_orders',
+        type=list,
+        default=[3, 3, 3],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
-        type=int,
-        default=32,
+        type=list,
+        default=[4, 8, 16],
         help='Number of parallel convolutional filters.'
+    )
+    parser.add_argument(
+        '--poolings',
+        type=list,
+        default=[4, 4, 4],
+        help='Pooling sizes.'
     )
     parser.add_argument(
         '--f_h',

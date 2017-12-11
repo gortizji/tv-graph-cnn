@@ -38,9 +38,7 @@ def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
 
             # Use einstein summation for efficiency and compactness
             SKxt = tf.einsum("abc,dcef->dabef", SK, xt)  # BxKxNxMxC
-            # SKxt = tf.einsum("abc,dce->dabe", SK, xt)  # BxKxNxM
             Yt = tf.einsum("abcde,bdef->abcf", SKxt, h)  # BxKxNxF
-            # Yt = tf.einsum("abcd,bde->abce", SKxt, h)  # BxKxNxF
             Yt = tf.einsum("abcd->acd", Yt)  # BxNxF
             Yt = tf.reshape(Yt, [-1, N, 1, F])  # BxNx1xF
 
@@ -88,7 +86,8 @@ def fir_tv_filtering_conv1d(x, S, h, b, kernel="naive"):
     # Use einstein summation for efficiency and compactness
     Y = tf.einsum("abc,dacef->dabcf", SK, XH)  # BxKxNxTxF
     Y = tf.einsum("abcdf->acdf", Y)  # BxNxTxF
-    Y += b
+    if b is not None:
+        Y += b
     return Y
 
 

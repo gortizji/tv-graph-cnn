@@ -8,7 +8,7 @@ from pygsp import graphs
 
 import tensorflow as tf
 
-from graph_utils import initialize_laplacian_tensor
+from graph_utils.laplacian import initialize_laplacian_tensor
 from source_localization.models import fir_tv_fc_fn, cheb_fc_fn
 from synthetic_data.data_generation import generate_wave_samples
 

@@ -39,7 +39,6 @@ def rescale_laplacian(L, lmax=2):
 def initialize_laplacian_tensor(W):
     L = compute_laplacian_from_adjacency(W, normalized=True)
     l, _ = eigsh(L, k=1)
-    print(l)
     L = rescale_laplacian(L)
     L = L.tocoo()
     data = L.data.astype(np.float32)

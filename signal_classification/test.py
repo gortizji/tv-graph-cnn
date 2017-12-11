@@ -9,7 +9,7 @@ from pygsp import graphs
 import tensorflow as tf
 
 from graph_utils import initialize_laplacian_tensor
-from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn, fc_fn
+from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn, fc_fn, deep_cheb_fc_fn
 from synthetic_data.data_generation import generate_spectral_samples
 
 FLAGS = None
@@ -60,7 +60,7 @@ class TemporalGraphBatchSource:
 def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
     (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
     labels_one_hot = tf.one_hot(labels, FLAGS.num_classes).eval()
-    feed_dict = {x: data, y: labels_one_hot, dropout: 1 if is_training else 1, phase: is_training}
+    feed_dict = {x: data, y: labels_one_hot, dropout: 0.5 if is_training else 1, phase: is_training}
     still_data = not is_end
     return feed_dict, still_data
 
@@ -73,13 +73,23 @@ def run_training(L, train_mb_source, test_mb_source):
     y_ = tf.placeholder(tf.float32, [None, FLAGS.num_classes])
 
     # Initialize model
-    # logits, dropout = fir_tv_fc_fn(x, L, FLAGS.num_classes, FLAGS.time_filter_order, FLAGS.filter_order, FLAGS.num_filters)
-    logits, dropout, phase = deep_fir_tv_fc_fn(x, L, FLAGS.num_classes, FLAGS.time_filter_orders,
-                                               FLAGS.vertex_filter_orders, FLAGS.num_filters, FLAGS.poolings)
-    # logits, dropout = cheb_fc_fn(x, L, FLAGS.num_classes, FLAGS.filter_order, FLAGS.num_filters)
-    # logits, dropout = jtv_cheb_fc_fn(x, L, FLAGS.num_classes, FLAGS.filter_order, FLAGS.num_filters)
-    # logits, dropout = fc_fn(x, FLAGS.num_classes)
-    # phase = tf.placeholder(tf.bool)
+    if FLAGS.model_type == "deep_fir":
+        print("Training deep FIR-TV model...")
+        logits, phase = deep_fir_tv_fc_fn(x, L, FLAGS.num_classes, FLAGS.time_filter_orders,
+                                                   FLAGS.vertex_filter_orders, FLAGS.num_filters, FLAGS.poolings)
+        dropout = tf.placeholder(tf.float32)
+    elif FLAGS.model_type == "deep_cheb":
+        print("Training deep Chebyshev time invariant model...")
+        xt = tf.transpose(x, perm=[0, 1, 3, 2])
+        logits, phase = deep_cheb_fc_fn(xt, L, FLAGS.num_classes, FLAGS.vertex_filter_orders, FLAGS.num_filters)
+        dropout = tf.placeholder(tf.float32)
+    elif FLAGS.model_type == "fc":
+        print("Training linear classifier model...")
+        logits = fc_fn(x, FLAGS.num_classes)
+        dropout = tf.placeholder(tf.float32)
+        phase = tf.placeholder(tf.bool)
+    else:
+        raise ValueError("model_type not valid.")
 
     # Define loss
     with tf.name_scope("loss"):
@@ -106,6 +116,8 @@ def run_training(L, train_mb_source, test_mb_source):
 
     # Create a saver for writing training checkpoints.
     saver = tf.train.Saver()
+
+    print("Number of training parameters:", _number_of_trainable_params())
 
     # Run session
     with tf.Session() as sess:
@@ -147,7 +159,7 @@ def run_training(L, train_mb_source, test_mb_source):
                 summary_writer.flush()
 
             # Save a checkpoint and evaluate the model periodically.
-            #if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
+            if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS or (step + 1) % 30 == 0:
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model.ckpt')
                 saver.save(sess, checkpoint_file, global_step=step)
 
@@ -160,7 +172,10 @@ def run_training(L, train_mb_source, test_mb_source):
 
                 print("--------------------")
                 print('Test accuracy = %.2f' % np.mean(test_accuracies))
-                print("====================")
+                if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0:
+                    print("====================")
+                else:
+                    print("--------------------")
 
 
 def main(_):
@@ -205,8 +220,18 @@ def main(_):
     run_training(L, train_mb_source,  test_mb_source)
 
 
+def _number_of_trainable_params():
+    return np.sum([np.product(x.shape) for x in tf.trainable_variables()])
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="deep_fir",
+        help="Model type"
+    )
     parser.add_argument(
         '--learning_rate',
         type=float,
@@ -222,7 +247,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_train',
         type=int,
-        default=1000,
+        default=10000,
         help='Number of training samples.'
     )
     parser.add_argument(
@@ -270,7 +295,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_filters',
         type=list,
-        default=[4, 8, 16],
+        default=[8, 16, 32],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
@@ -312,7 +337,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--sigma_n',
         type=float,
-        default=1,
+        default=2,
         help='Noise standard deviation.'
     )
     parser.add_argument(

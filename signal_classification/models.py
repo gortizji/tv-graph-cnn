@@ -39,8 +39,6 @@ def fc_fn(x, output_units):
     :param num_filters: number of parallel filters
     :return: computational graph
     """
-    keep_prob = tf.placeholder(tf.float32)
-
     with tf.name_scope("fc"):
         fc_input = tf.layers.flatten(x)
         fc = tf.layers.dense(
@@ -50,7 +48,7 @@ def fc_fn(x, output_units):
             use_bias=True
         )
 
-    return fc, keep_prob
+    return fc
 
 
 def _batch_normalization(input, is_training=True, scope=None):
@@ -64,12 +62,12 @@ def _batch_normalization(input, is_training=True, scope=None):
 
 
 def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_orders, num_filters, poolings):
-    assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters), \
+    assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters) == len(poolings), \
         "Filter parameters should all be of the same length"
 
     n_layers = len(time_filter_orders)
-    keep_prob = tf.placeholder(tf.float32)
     phase = tf.placeholder(tf.bool)
+
     # Convolutional layers
     pool = x
     for n in range(n_layers):
@@ -77,8 +75,7 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
             conv = _fir_tv_layer(pool, L, time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
             conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
             conv = tf.nn.relu(conv)
-        # with tf.name_scope("drop%d" % n):
-        #     drop = tf.nn.dropout(conv, keep_prob=keep_prob)
+
         with tf.name_scope("subsampling%d" % n):
             pool = tf.layers.max_pooling2d(
                 inputs=conv,
@@ -96,44 +93,33 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
             activation=None,
             use_bias=True,
         )
-    return fc, keep_prob, phase
+    return fc, phase
 
 
-def deep_cheb_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_orders, num_filters, poolings):
-    assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters), \
-        "Filter parameters should all be of the same length"
+def deep_cheb_fc_fn(x, L, num_classes, vertex_filter_orders, num_filters):
+    assert len(vertex_filter_orders) == len(num_filters), "Filter parameters should all be of the same length"
 
-    n_layers = len(time_filter_orders)
-    keep_prob = tf.placeholder(tf.float32)
+    n_layers = len(vertex_filter_orders)
     phase = tf.placeholder(tf.bool)
 
     # Convolutional layers
-    pool = x
+    conv = x
     for n in range(n_layers):
         with tf.name_scope("conv%d" % n):
-            conv = _fir_tv_layer(pool, L, time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
+            conv = _cheb_conv_layer(conv, L, vertex_filter_orders[n], num_filters[n])
             conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
             conv = tf.nn.relu(conv)
-        # with tf.name_scope("drop%d" % n):
-        #     drop = tf.nn.dropout(conv, keep_prob=keep_prob)
-        with tf.name_scope("subsampling%d" % n):
-            pool = tf.layers.max_pooling2d(
-                inputs=conv,
-                pool_size=(1, poolings[n]),
-                padding="same",
-                strides=(1, poolings[n])
-            )
 
     # Last fully connected layer
     with tf.name_scope("fc"):
-        fc_input = tf.layers.flatten(pool)
+        fc_input = tf.layers.flatten(conv)
         fc = tf.layers.dense(
             inputs=fc_input,
             units=num_classes,
             activation=None,
             use_bias=True,
         )
-    return fc, keep_prob, phase
+    return fc, phase
 
 
 def _fir_tv_layer(x, L, time_filter_order, vertex_filter_order, num_filters):
@@ -144,6 +130,17 @@ def _fir_tv_layer(x, L, time_filter_order, vertex_filter_order, num_filters):
             hfir = _weight_variable([vertex_filter_order, time_filter_order, num_channels, num_filters])
             _variable_summaries(hfir)
         graph_conv = fir_tv_filtering_einsum(x, L, hfir, None, "chebyshev")
+    return graph_conv
+
+
+def _cheb_conv_layer(x, L, vertex_filter_order, num_filters):
+    _, _, _, num_channels = x.get_shape()
+    num_channels = int(num_channels)
+    with tf.name_scope("fir_tv"):
+        with tf.name_scope("weights"):
+            hfir = _weight_variable([vertex_filter_order, num_channels, num_filters])
+            _variable_summaries(hfir)
+        graph_conv = chebyshev_convolution(x, L, hfir, None)
     return graph_conv
 
 

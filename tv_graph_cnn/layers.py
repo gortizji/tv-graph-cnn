@@ -65,13 +65,13 @@ def fir_tv_filtering_conv1d(x, S, h, b, kernel="naive"):
     :return: Filtered signal
     """
 
-    B, N, T = x.get_shape()  # B: number of samples in batch, N: number of nodes, T: temporal length
-    K, M, F = h.get_shape()  # K: Length vertex filter, M: Length time filter, F: Number of filters
+    B, N, T, C = x.get_shape()  # B: number of samples in batch, N: number of nodes, T: temporal length, C: channels
+    K, M, C, F = h.get_shape()  # K: Length vertex filter, M: Length time filter, C: In channels, F: Number of filters
 
-    x = tf.reshape(x, [-1, T, 1])  # BNx1xT
+    x = tf.reshape(x, [-1, T, C])  # BNxTxC
     XH = []
     for k in range(K):
-        XHk = tf.nn.conv1d(x, tf.reshape(h[k, :, :], [M, 1, F]), stride=1, padding="SAME", data_format="NHWC")  # BNxTxF
+        XHk = tf.nn.conv1d(x, h[k, :, :, :], stride=1, padding="SAME", data_format="NHWC")  # BNxTxF
         XH.append(tf.reshape(XHk, [-1, 1, N, T, F]))
     XH = tf.concat(XH, axis=1)  # BxKxNxTxF
 
@@ -84,9 +84,7 @@ def fir_tv_filtering_conv1d(x, S, h, b, kernel="naive"):
 
     # Use einstein summation for efficiency and compactness
     Y = tf.einsum("abc,dacef->dabcf", SK, XH)  # BxKxNxTxF
-    # Y = tf.einsum("kij,Bkjab->Bkiab", SK, XH)  # BxKxNxTxF
     Y = tf.einsum("abcdf->acdf", Y)  # BxNxTxF
-    # Y = tf.einsum("Bkiab->Biab", Y)  # BxNxTxF
     Y += b
     return Y
 

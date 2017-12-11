@@ -97,9 +97,11 @@ def cheb_fc_fn(x, L, output_units, filter_order, num_filters):
     :param num_filters: number of parallel filters
     :return: computational graph
     """
+    B, N, C = x.get_shape()
+    C = int(C)
     with tf.name_scope("chebyshev_conv"):
         with tf.name_scope("weights"):
-            Wcheb = weight_variable([filter_order, num_filters])
+            Wcheb = weight_variable([filter_order, C, num_filters])
             variable_summaries(Wcheb)
         with tf.name_scope("biases"):
             bcheb = bias_variable([num_filters])

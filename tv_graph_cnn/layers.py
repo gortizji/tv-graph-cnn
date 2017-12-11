@@ -19,6 +19,7 @@ def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
     K, M, C, F = h.get_shape()  # K: Length vertex filter, M: Length time filter, C: In channels, F: Number of filters
     M = int(M)
     T = int(T)
+
     with tf.name_scope("kernel_creation"):
         if kernel == "naive":
             SK = _vertex_fir_kernel(S, K)  # KxNxN
@@ -91,30 +92,29 @@ def fir_tv_filtering_conv1d(x, S, h, b, kernel="naive"):
     return Y
 
 
-def chebyshev_convolution(x, L, W, b):
+def chebyshev_convolution(x, L, h, b):
     """
     Graph convolutional layer based on Chebyshev FIR filtering
     :param x: Input signal (NxNvxT)
     :param L: Graph laplacian (NvxNv)
-    :param W: Weights of chebyshev filters (KxF)
+    :param h: Weights of chebyshev filters (KxCxF)
     :param b: biases of chebyshev filters (F)
     :return: Computational graph
     """
-    N, Nv, T = x.get_shape()  # N: number of samples, Nv: number of vertices, T: number of features per vertex
-    K, F = W.get_shape()  # K: filter order, F: number of filters
-    T = int(T)
+    B, N, C = x.get_shape()  # B: number of samples in batch, N: number of nodes, C: number of input channels
+    K, C, F = h.get_shape()  # K: filter order, C: number of input channels, F: number of filters
 
     # Compute Chebyshev basis
+    SK = _chebyshev_kernel(L, K)  # KxNxN
 
-    xt = _chebyshev_basis(x, L, K)
+    SKx = tf.einsum("abc,dcf->dabf", SK, x)  # BxKxNxC
+    Y = tf.einsum("abc,dafb->dafc", h, SKx)  # BxKxNxF
+    Y = tf.einsum("abcd->acd", Y)  # BxNxF
 
-    # Filter
-    xt = tf.reshape(xt, [-1, K])  # NNvT x K
-    y = tf.matmul(xt, W)  # NNvT x F
-    y = tf.reshape(y, [-1, Nv, T, F])  # N x Nv x T x F
-    y += b  # N x Nv x T x F
+    if b is not None:
+        Y += b  # BxNxF
 
-    return y
+    return Y
 
 
 def jtv_chebyshev_convolution(x, L, W, b):

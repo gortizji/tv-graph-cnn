@@ -9,7 +9,7 @@ from pygsp import graphs
 import tensorflow as tf
 
 from graph_utils import initialize_laplacian_tensor
-from source_localization.models import fir_tv_fc_fn
+from source_localization.models import fir_tv_fc_fn, cheb_fc_fn
 from synthetic_data.data_generation import generate_wave_samples
 
 FLAGS = None
@@ -59,8 +59,8 @@ def run_training(mb_source, L, test_data, test_labels):
     y_ = tf.placeholder(tf.float32, [None, FLAGS.num_vertices])
 
     # Initialize model
-    logits, dropout = fir_tv_fc_fn(x, L, FLAGS.num_vertices, FLAGS.time_filter_order, FLAGS.filter_order, FLAGS.num_filters)
-    # logits, dropout = cheb_fc_fn(x, L, FLAGS.num_vertices, FLAGS.filter_order, FLAGS.num_filters)
+    # logits, dropout = fir_tv_fc_fn(x, L, FLAGS.num_vertices, FLAGS.time_filter_order, FLAGS.filter_order, FLAGS.num_filters)
+    logits, dropout = cheb_fc_fn(x, L, FLAGS.num_vertices, FLAGS.filter_order, FLAGS.num_filters)
     # logits, dropout = fc_fn(x, FLAGS.num_vertices)
 
     # Define loss
@@ -166,13 +166,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=1e-5,
+        default=1e-4,
         help='Initial learning rate.'
     )
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=5,
+        default=20,
         help='Number of epochs to run trainer.'
     )
     parser.add_argument(
@@ -202,13 +202,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_vertices',
         type=int,
-        default=100,
+        default=25,
         help='Number of graph vertices.'
     )
     parser.add_argument(
         '--num_frames',
         type=int,
-        default=24,
+        default=10,
         help='Number of temporal frames.'
     )
     parser.add_argument(

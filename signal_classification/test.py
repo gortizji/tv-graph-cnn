@@ -8,8 +8,8 @@ from pygsp import graphs
 
 import tensorflow as tf
 
-from graph_utils import initialize_laplacian_tensor
 from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn, fc_fn, deep_cheb_fc_fn
+from graph_utils.laplacian import initialize_laplacian_tensor
 from synthetic_data.data_generation import generate_spectral_samples
 
 FLAGS = None

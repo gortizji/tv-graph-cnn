@@ -189,23 +189,28 @@ def generate_spectral_samples(N, T, G, f_h, lambda_h, f_l, lambda_l, sigma=10):
     for _ in range(N):
         x = hp_hp_sample(T, G, f_h, lambda_h, sigma)
         x = np.round(x.real)
+        x = np.expand_dims(x, axis=3)
         dataset.append(x)
         labels.append(0)
     for _ in range(N):
         x = lp_lp_sample(T, G, f_l, lambda_l, sigma)
         x = np.round(x.real)
+        x = np.expand_dims(x, axis=3)
         dataset.append(x)
         labels.append(1)
     for _ in range(N):
         x = lp_hp_sample(T, G, f_l, lambda_h, sigma)
         x = np.round(x.real)
+        x = np.expand_dims(x, axis=3)
         dataset.append(x)
         labels.append(2)
     for _ in range(N):
         x = hp_lp_sample(T, G, f_h, lambda_l, sigma)
         x = np.round(x.real)
+        x = np.expand_dims(x, axis=3)
         dataset.append(x)
         labels.append(3)
     dataset = np.array(dataset)
+    print(dataset.shape)
     labels = np.array(labels)
     return dataset, labels

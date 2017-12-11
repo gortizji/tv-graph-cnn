@@ -15,8 +15,8 @@ def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
     :param h: FIR-TV coefficients (F: filters of lengths K: Vertex M: Time
     :return: Filtered signal
     """
-    B, N, T = x.get_shape()  # B: number of samples in batch, N: number of nodes, T: temporal length
-    K, M, F = h.get_shape()  # K: Length vertex filter, M: Length time filter, F: Number of filters
+    B, N, T, C = x.get_shape()  # B: number of samples in batch, N: number of nodes, T: temporal length, C: channels
+    K, M, C, F = h.get_shape()  # K: Length vertex filter, M: Length time filter, C: In channels, F: Number of filters
     M = int(M)
     T = int(T)
     with tf.name_scope("kernel_creation"):
@@ -30,15 +30,17 @@ def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
     with tf.name_scope("tv_conv"):
         for t in range(T):
             if t <= T - M:
-                xt = x[:, :, t:t + M]  # BxNxM
+                xt = x[:, :, t:t + M, :]  # BxNxMxC
             else:
                 # Pad with zeros
-                xt = tf.zeros_like(x[:, :, 0:(M - 1) - (T - 1 - t)])
-                xt = tf.concat([xt, x[:, :, t:]], axis=2)
+                xt = tf.zeros_like(x[:, :, 0:(M - 1) - (T - 1 - t), :])
+                xt = tf.concat([xt, x[:, :, t:, :]], axis=2)
 
             # Use einstein summation for efficiency and compactness
-            SKxt = tf.einsum("abc,dce->dabe", SK, xt)  # BxKxNxM
-            Yt = tf.einsum("abcd,bde->abce", SKxt, h)  # BxKxNxF
+            SKxt = tf.einsum("abc,dcef->dabef", SK, xt)  # BxKxNxMxC
+            # SKxt = tf.einsum("abc,dce->dabe", SK, xt)  # BxKxNxM
+            Yt = tf.einsum("abcde,bdef->abcf", SKxt, h)  # BxKxNxF
+            # Yt = tf.einsum("abcd,bde->abce", SKxt, h)  # BxKxNxF
             Yt = tf.einsum("abcd->acd", Yt)  # BxNxF
             Yt = tf.reshape(Yt, [-1, N, 1, F])  # BxNx1xF
 
@@ -46,6 +48,7 @@ def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
                 Y = Yt
             else:
                 Y = tf.concat([Y, Yt], axis=2)  # BxNxTxF
+    if b is not None:
         Y += b
     return Y
 

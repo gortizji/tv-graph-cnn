@@ -9,7 +9,7 @@ from pygsp import graphs
 import tensorflow as tf
 
 from graph_utils import initialize_laplacian_tensor
-from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn
+from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn, fc_fn
 from synthetic_data.data_generation import generate_spectral_samples
 
 FLAGS = None
@@ -60,7 +60,7 @@ class TemporalGraphBatchSource:
 def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
     (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
     labels_one_hot = tf.one_hot(labels, FLAGS.num_classes).eval()
-    feed_dict = {x: data, y: labels_one_hot, dropout: 0.5 if is_training else 1, phase: is_training}
+    feed_dict = {x: data, y: labels_one_hot, dropout: 1 if is_training else 1, phase: is_training}
     still_data = not is_end
     return feed_dict, still_data
 
@@ -78,7 +78,8 @@ def run_training(L, train_mb_source, test_mb_source):
                                                FLAGS.vertex_filter_orders, FLAGS.num_filters, FLAGS.poolings)
     # logits, dropout = cheb_fc_fn(x, L, FLAGS.num_classes, FLAGS.filter_order, FLAGS.num_filters)
     # logits, dropout = jtv_cheb_fc_fn(x, L, FLAGS.num_classes, FLAGS.filter_order, FLAGS.num_filters)
-    # logits, dropout = fc_fn(x, FLAGS.num_vertices)
+    # logits, dropout = fc_fn(x, FLAGS.num_classes)
+    # phase = tf.placeholder(tf.bool)
 
     # Define loss
     with tf.name_scope("loss"):
@@ -93,12 +94,12 @@ def run_training(L, train_mb_source, test_mb_source):
         accuracy = tf.reduce_mean(correct_prediction)
         tf.summary.scalar('accuracy', accuracy)
 
-
-
-    # Select optimizer
-    optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
-    global_step = tf.Variable(0, name='global_step', trainable=False)
-    opt_train = optimizer.minimize(loss, global_step=global_step)
+    extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(extra_update_ops):
+        # Select optimizer
+        optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
+        global_step = tf.Variable(0, name='global_step', trainable=False)
+        opt_train = optimizer.minimize(loss, global_step=global_step)
 
     # Build the summary Tensor based on the TF collection of Summaries.
     summary = tf.summary.merge_all()
@@ -181,8 +182,10 @@ def main(_):
         f_l=FLAGS.f_h,
         lambda_h=FLAGS.lambda_h,
         lambda_l=FLAGS.lambda_l,
-        sigma=FLAGS.sigma)
-    train_mb_source = TemporalGraphBatchSource(train_data, train_labels)
+        sigma=FLAGS.sigma,
+        sigma_n=FLAGS.sigma_n
+    )
+    train_mb_source = TemporalGraphBatchSource(train_data, train_labels, repeat=True)
 
     test_data, test_labels = generate_spectral_samples(
         N=FLAGS.num_test // 4,
@@ -192,7 +195,9 @@ def main(_):
         f_l=FLAGS.f_h,
         lambda_h=FLAGS.lambda_h,
         lambda_l=FLAGS.lambda_l,
-        sigma=FLAGS.sigma)
+        sigma=FLAGS.sigma,
+        sigma_n=FLAGS.sigma_n
+    )
 
     test_mb_source = TemporalGraphBatchSource(test_data, test_labels, repeat=False)
 
@@ -217,7 +222,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_train',
         type=int,
-        default=20000,
+        default=1000,
         help='Number of training samples.'
     )
     parser.add_argument(
@@ -277,32 +282,38 @@ if __name__ == '__main__':
     parser.add_argument(
         '--f_h',
         type=int,
-        default=80,
+        default=40,
         help='High pass cut frequency (time)'
     )
     parser.add_argument(
         '--f_l',
         type=int,
-        default=10,
+        default=60,
         help='Low pass cut frequency (time)'
     )
     parser.add_argument(
         '--lambda_h',
         type=int,
-        default=80,
+        default=40,
         help='High pass cut frequency (graph)'
     )
     parser.add_argument(
         '--lambda_l',
         type=int,
-        default=15,
+        default=60,
         help='low pass cut frequency (graph)'
     )
     parser.add_argument(
         '--sigma',
         type=float,
-        default=10,
+        default=2,
         help='Source standard deviation.'
+    )
+    parser.add_argument(
+        '--sigma_n',
+        type=float,
+        default=1,
+        help='Noise standard deviation.'
     )
     parser.add_argument(
         '--num_classes',

@@ -90,7 +90,12 @@ def run_training(L, train_mb_source, test_mb_source):
     elif FLAGS.model_type == "deep_cheb":
         print("Training deep Chebyshev time invariant model...")
         xt = tf.transpose(x, perm=[0, 1, 3, 2])
-        logits, phase = deep_cheb_fc_fn(xt, L, FLAGS.num_classes, FLAGS.vertex_filter_orders, FLAGS.num_filters)
+        logits, phase = deep_cheb_fc_fn(x=xt,
+                                        L=L,
+                                        num_classes=FLAGS.num_classes,
+                                        vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                        num_filters=FLAGS.num_filters,
+                                        vertex_poolings=FLAGS.vertex_poolings)
         dropout = tf.placeholder(tf.float32)
     elif FLAGS.model_type == "fc":
         print("Training linear classifier model...")
@@ -251,7 +256,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--model_type",
         type=str,
-        default="deep_fir",
+        default="deep_cheb",
         help="Model type"
     )
     parser.add_argument(

@@ -8,8 +8,10 @@ from pygsp import graphs
 
 import tensorflow as tf
 
-from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn, fc_fn, deep_cheb_fc_fn
+from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn, fc_fn, \
+    deep_cheb_fc_fn
 from graph_utils.laplacian import initialize_laplacian_tensor
+from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
 from synthetic_data.data_generation import generate_spectral_samples
 
 FLAGS = None
@@ -69,14 +71,21 @@ def run_training(L, train_mb_source, test_mb_source):
     """Performs training and evaluation."""
 
     # Create data placeholders
-    x = tf.placeholder(tf.float32, [None, FLAGS.num_vertices, FLAGS.num_frames, 1])
+    num_vertices, _ = L[0].get_shape()
+    x = tf.placeholder(tf.float32, [None, num_vertices, FLAGS.num_frames, 1])
     y_ = tf.placeholder(tf.float32, [None, FLAGS.num_classes])
 
     # Initialize model
     if FLAGS.model_type == "deep_fir":
         print("Training deep FIR-TV model...")
-        logits, phase = deep_fir_tv_fc_fn(x, L, FLAGS.num_classes, FLAGS.time_filter_orders,
-                                                   FLAGS.vertex_filter_orders, FLAGS.num_filters, FLAGS.poolings)
+        logits, phase = deep_fir_tv_fc_fn(x=x,
+                                          L=L,
+                                          num_classes=FLAGS.num_classes,
+                                          time_filter_orders=FLAGS.time_filter_orders,
+                                          vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                          num_filters=FLAGS.num_filters,
+                                          time_poolings=FLAGS.time_poolings,
+                                          vertex_poolings=FLAGS.vertex_poolings)
         dropout = tf.placeholder(tf.float32)
     elif FLAGS.model_type == "deep_cheb":
         print("Training deep Chebyshev time invariant model...")
@@ -159,7 +168,8 @@ def run_training(L, train_mb_source, test_mb_source):
                 summary_writer.flush()
 
             # Save a checkpoint and evaluate the model periodically.
-            if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS or (step + 1) % 30 == 0:
+            if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS or (
+                    step + 1) % 30 == 0:
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model.ckpt')
                 saver.save(sess, checkpoint_file, global_step=step)
 
@@ -185,9 +195,8 @@ def main(_):
     tf.gfile.MakeDirs(FLAGS.log_dir)
 
     # Initialize data
-    G = graphs.ErdosRenyi(FLAGS.num_vertices, 0.1)
+    G = graphs.Community(FLAGS.num_vertices)
     G.compute_laplacian("normalized")
-    L = initialize_laplacian_tensor(G.W)
 
     train_data, train_labels = generate_spectral_samples(
         N=FLAGS.num_train // 4,
@@ -200,7 +209,6 @@ def main(_):
         sigma=FLAGS.sigma,
         sigma_n=FLAGS.sigma_n
     )
-    train_mb_source = TemporalGraphBatchSource(train_data, train_labels, repeat=True)
 
     test_data, test_labels = generate_spectral_samples(
         N=FLAGS.num_test // 4,
@@ -214,10 +222,24 @@ def main(_):
         sigma_n=FLAGS.sigma_n
     )
 
+    # Prepare pooling
+    num_levels = _number_of_pooling_levels(FLAGS.vertex_poolings)
+    adjacencies, perm = coarsen(G.A, levels=num_levels)  # Coarsens in powers of 2
+    L = [initialize_laplacian_tensor(A) for A in adjacencies]
+    L = keep_pooling_laplacians(L, FLAGS.vertex_poolings)
+    train_data = perm_data(train_data, perm)
+    test_data = perm_data(test_data, perm)
+
+    # Initialize minibatch sources
+    train_mb_source = TemporalGraphBatchSource(train_data, train_labels, repeat=True)
     test_mb_source = TemporalGraphBatchSource(test_data, test_labels, repeat=False)
 
     # Run training and evaluation loop
-    run_training(L, train_mb_source,  test_mb_source)
+    run_training(L, train_mb_source, test_mb_source)
+
+
+def _number_of_pooling_levels(vertex_poolings):
+    return np.log2(np.prod(vertex_poolings)).astype(int)
 
 
 def _number_of_trainable_params():
@@ -299,33 +321,39 @@ if __name__ == '__main__':
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
-        '--poolings',
+        '--time_poolings',
         type=list,
         default=[4, 4, 4],
-        help='Pooling sizes.'
+        help='Time pooling sizes.'
+    )
+    parser.add_argument(
+        "--vertex_poolings",
+        type=list,
+        default=[2, 2, 2],
+        help="Vertex pooling sizes"
     )
     parser.add_argument(
         '--f_h',
         type=int,
-        default=40,
+        default=50,
         help='High pass cut frequency (time)'
     )
     parser.add_argument(
         '--f_l',
         type=int,
-        default=60,
+        default=15,
         help='Low pass cut frequency (time)'
     )
     parser.add_argument(
         '--lambda_h',
         type=int,
-        default=40,
+        default=80,
         help='High pass cut frequency (graph)'
     )
     parser.add_argument(
         '--lambda_l',
         type=int,
-        default=60,
+        default=15,
         help='low pass cut frequency (graph)'
     )
     parser.add_argument(

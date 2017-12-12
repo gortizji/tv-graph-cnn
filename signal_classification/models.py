@@ -61,32 +61,43 @@ def _batch_normalization(input, is_training=True, scope=None):
                                                         reuse=True))
 
 
-def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_orders, num_filters, poolings):
-    assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters) == len(poolings), \
+def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_orders, num_filters, time_poolings,
+                      vertex_poolings):
+    assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters) == len(time_poolings), \
         "Filter parameters should all be of the same length"
 
     n_layers = len(time_filter_orders)
     phase = tf.placeholder(tf.bool)
 
     # Convolutional layers
-    pool = x
+    vpool = x
     for n in range(n_layers):
         with tf.name_scope("conv%d" % n):
-            conv = _fir_tv_layer(pool, L, time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
+            conv = _fir_tv_layer(vpool, L[n], time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
             conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
             conv = tf.nn.relu(conv)
 
         with tf.name_scope("subsampling%d" % n):
-            pool = tf.layers.max_pooling2d(
+            tpool = tf.layers.max_pooling2d(
                 inputs=conv,
-                pool_size=(1, poolings[n]),
+                pool_size=(1, time_poolings[n]),
                 padding="same",
-                strides=(1, poolings[n])
+                strides=(1, time_poolings[n])
             )
+        with tf.name_scope("vertex_pooling%d" % n):
+            if vertex_poolings[n] > 1:
+                vpool = tf.layers.max_pooling2d(
+                    inputs=tpool,
+                    pool_size=(vertex_poolings[n], 1),
+                    padding="same",
+                    strides=(vertex_poolings[n], 1)
+                )
+            else:
+                vpool = tpool
 
     # Last fully connected layer
     with tf.name_scope("fc"):
-        fc_input = tf.layers.flatten(pool)
+        fc_input = tf.layers.flatten(vpool)
         fc = tf.layers.dense(
             inputs=fc_input,
             units=num_classes,

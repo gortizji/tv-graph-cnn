@@ -19,13 +19,6 @@ def _bias_variable(shape):
 def _variable_summaries(var):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
     with tf.name_scope('summaries'):
-        mean = tf.reduce_mean(var)
-        tf.summary.scalar('mean', mean)
-        with tf.name_scope('stddev'):
-            stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-        tf.summary.scalar('stddev', stddev)
-        tf.summary.scalar('max', tf.reduce_max(var))
-        tf.summary.scalar('min', tf.reduce_min(var))
         tf.summary.histogram('histogram', var)
 
 
@@ -67,7 +60,7 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
         "Filter parameters should all be of the same length"
 
     n_layers = len(time_filter_orders)
-    phase = tf.placeholder(tf.bool)
+    phase = tf.placeholder(tf.bool, name="phase")
 
     # Convolutional layers
     vpool = x
@@ -75,7 +68,7 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
         with tf.name_scope("conv%d" % n):
             conv = _fir_tv_layer(vpool, L[n], time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
             conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
-            conv = tf.nn.relu(conv)
+            conv = tf.nn.relu(conv, name="conv%d" % n)
 
         with tf.name_scope("subsampling%d" % n):
             tpool = tf.layers.max_pooling2d(
@@ -104,6 +97,7 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
             activation=None,
             use_bias=True,
         )
+        fc = tf.identity(fc, name="fc")
     return fc, phase
 
 
@@ -112,7 +106,7 @@ def deep_cheb_fc_fn(x, L, num_classes, vertex_filter_orders, num_filters, vertex
         "Filter parameters should all be of the same length"
 
     n_layers = len(vertex_filter_orders)
-    phase = tf.placeholder(tf.bool)
+    phase = tf.placeholder(tf.bool, name="phase")
 
     # Convolutional layers
     vpool = x
@@ -120,7 +114,7 @@ def deep_cheb_fc_fn(x, L, num_classes, vertex_filter_orders, num_filters, vertex
         with tf.name_scope("conv%d" % n):
             conv = _cheb_conv_layer(vpool, L[n], vertex_filter_orders[n], num_filters[n])
             conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
-            conv = tf.nn.relu(conv)
+            conv = tf.nn.relu(conv, name="conv%d" % n)
 
         with tf.name_scope("vertex_pooling%d" % n):
             if vertex_poolings[n] > 1:
@@ -133,7 +127,6 @@ def deep_cheb_fc_fn(x, L, num_classes, vertex_filter_orders, num_filters, vertex
             else:
                 vpool = conv
 
-
     # Last fully connected layer
     with tf.name_scope("fc"):
         fc_input = tf.layers.flatten(vpool)
@@ -141,8 +134,10 @@ def deep_cheb_fc_fn(x, L, num_classes, vertex_filter_orders, num_filters, vertex
             inputs=fc_input,
             units=num_classes,
             activation=None,
-            use_bias=True,
+            use_bias=True
         )
+
+        fc = tf.identity(fc, "fc")
     return fc, phase
 
 

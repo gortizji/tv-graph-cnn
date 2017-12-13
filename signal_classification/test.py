@@ -12,7 +12,7 @@ from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_f
     deep_cheb_fc_fn
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
-from synthetic_data.data_generation import generate_spectral_samples
+from synthetic_data.data_generation import generate_spectral_samples, generate_spectral_samples_hard
 
 FLAGS = None
 TEMPDIR = "/users/gortizjimenez/tmp/"
@@ -249,8 +249,8 @@ def main(_):
         perm = np.load(os.path.join(FLAGS.log_dir, "ordering.npy"))
 
     if FLAGS.action == "train":
-        train_data, train_labels = generate_spectral_samples(
-            N=FLAGS.num_train // 4,
+        train_data, train_labels = generate_spectral_samples_hard(
+            N=FLAGS.num_train // FLAGS.num_classes,
             G=G,
             T=FLAGS.num_frames,
             f_h=FLAGS.f_h,
@@ -263,8 +263,8 @@ def main(_):
         train_data = perm_data(train_data, perm)
         train_mb_source = TemporalGraphBatchSource(train_data, train_labels, repeat=True)
 
-    test_data, test_labels = generate_spectral_samples(
-        N=FLAGS.num_test // 4,
+    test_data, test_labels = generate_spectral_samples_hard(
+        N=FLAGS.num_test // FLAGS.num_classes,
         G=G,
         T=FLAGS.num_frames,
         f_h=FLAGS.f_h,
@@ -314,7 +314,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--model_type",
         type=str,
-        default="deep_cheb",
+        default="deep_fir",
         help="Model type"
     )
     parser.add_argument(
@@ -338,13 +338,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_train',
         type=int,
-        default=10000,
+        default=12000,
         help='Number of training samples.'
     )
     parser.add_argument(
         '--num_test',
         type=int,
-        default=1000,
+        default=1200,
         help='Number of test samples.'
     )
     parser.add_argument(
@@ -439,13 +439,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--sigma_n',
         type=float,
-        default=2,
+        default=1,
         help='Noise standard deviation.'
     )
     parser.add_argument(
         '--num_classes',
         type=int,
-        default=4,
+        default=6,
         help='Number of classes to separate.'
     )
     FLAGS, unparsed = parser.parse_known_args()

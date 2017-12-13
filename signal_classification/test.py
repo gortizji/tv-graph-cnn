@@ -137,7 +137,8 @@ def run_training(L, train_mb_source, test_mb_source):
     with tf.Session() as sess:
 
         # Instantiate a SummaryWriter to output summaries and the Graph.
-        summary_writer = tf.summary.FileWriter(FLAGS.log_dir, sess.graph)
+        train_writer = tf.summary.FileWriter(FLAGS.log_dir + "/train", sess.graph)
+        test_writer = tf.summary.FileWriter(FLAGS.log_dir + "/test", sess.graph)
 
         sess.run(tf.global_variables_initializer())
 
@@ -169,8 +170,8 @@ def run_training(L, train_mb_source, test_mb_source):
                 print('Step %d: loss = %.2f accuracy = %.2f (%.3f sec)' % (step, loss_value, accuracy_value, duration))
                 # Update the events file.
                 summary_str = sess.run(summary, feed_dict=feed_dict)
-                summary_writer.add_summary(summary_str, step)
-                summary_writer.flush()
+                train_writer.add_summary(summary_str, step)
+                train_writer.flush()
 
             # Save a checkpoint and evaluate the model periodically.
             if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS or (
@@ -179,6 +180,10 @@ def run_training(L, train_mb_source, test_mb_source):
                 saver.save(sess, checkpoint_file, global_step=step)
 
                 test_accuracy = _eval_metric(sess, correct_prediction, dropout, phase, x, y_, test_mb_source)
+
+                test_summary = tf.Summary(value=[tf.Summary.Value(tag="test_accuracy", simple_value=test_accuracy)])
+                test_writer.add_summary(test_summary, step)
+                test_writer.flush()
 
                 print("--------------------")
                 print('Test accuracy = %.2f' % test_accuracy)
@@ -378,31 +383,36 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--vertex_filter_orders',
-        type=list,
+        type=int,
         default=[3, 3, 3],
+        nargs="+",
         help='Convolution vertex order.'
     )
     parser.add_argument(
         '--time_filter_orders',
-        type=list,
+        type=int,
+        nargs="+",
         default=[3, 3, 3],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
-        type=list,
+        type=int,
+        nargs="+",
         default=[8, 16, 32],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
         '--time_poolings',
-        type=list,
+        type=int,
+        nargs="+",
         default=[4, 4, 4],
         help='Time pooling sizes.'
     )
     parser.add_argument(
         "--vertex_poolings",
-        type=list,
+        type=int,
+        nargs="+",
         default=[2, 2, 2],
         help="Vertex pooling sizes"
     )

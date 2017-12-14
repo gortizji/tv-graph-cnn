@@ -15,7 +15,8 @@ from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
 from synthetic_data.data_generation import generate_spectral_samples, generate_spectral_samples_hard
 
 FLAGS = None
-TEMPDIR = "/users/gortizjimenez/tmp/"
+FILEDIR = os.path.dirname(os.path.realpath(__file__))
+TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "experiments"))
 
 
 class TemporalGraphBatchSource:
@@ -337,7 +338,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=10,
+        default=1,
         help='Number of epochs to run trainer.'
     )
     parser.add_argument(
@@ -361,7 +362,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--log_dir',
         type=str,
-        default=os.path.join(TEMPDIR, "tensorflow/tv_graph_cnn/logs/signal_detection"),
+        default=os.path.join(TEMPDIR, "/signal_detection"),
         help='Logging directory'
     )
     parser.add_argument(

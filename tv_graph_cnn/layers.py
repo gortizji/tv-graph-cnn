@@ -101,18 +101,18 @@ def chebyshev_convolution(x, L, h, b):
     :param b: biases of chebyshev filters (F)
     :return: Computational graph
     """
-    B, N, C = x.get_shape()  # B: number of samples in batch, N: number of nodes, C: number of input channels
+    B, N, T, C = x.get_shape()  # B: number of samples in batch, N: number of nodes, T: Time samples, C: input channels
     K, C, F = h.get_shape()  # K: filter order, C: number of input channels, F: number of filters
 
     # Compute Chebyshev basis
     SK = _chebyshev_kernel(L, K)  # KxNxN
 
-    SKx = tf.einsum("abc,dcf->dabf", SK, x)  # BxKxNxC
-    Y = tf.einsum("abc,dafb->dafc", h, SKx)  # BxKxNxF
-    Y = tf.einsum("abcd->acd", Y)  # BxNxF
+    SKx = tf.einsum("abc,dcef->dabef", SK, x)  # BxKxNxTxC
+    Y = tf.einsum("abc,dafgb->dafgc", h, SKx)  # BxKxNxTxF
+    Y = tf.einsum("abcde->acde", Y)  # BxNxTxF
 
     if b is not None:
-        Y += b  # BxNxF
+        Y += b  # BxNxTxF
 
     return Y
 

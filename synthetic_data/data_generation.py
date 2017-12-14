@@ -171,7 +171,7 @@ def lp_hp_sample(T, G, f_c, lambda_c, sigma=1):
     return x
 
 
-def generate_spectral_samples(N, T, G, f_h, lambda_h, f_l, lambda_l, sigma=10):
+def generate_spectral_samples(N, T, G, f_h, lambda_h, f_l, lambda_l, sigma=10, sigma_n=0):
     """
     Generate dataset composed of quantized filtered hp-hp, lp-lp, hp-lp and lp-hp white noise.
     :param N: Number of samples per type
@@ -182,35 +182,99 @@ def generate_spectral_samples(N, T, G, f_h, lambda_h, f_l, lambda_l, sigma=10):
     :param f_l: Index of lp cut frequency in time fourier domain
     :param lambda_l: Index of lp cut frequency in graph fourier domain
     :param sigma: Standard deviation of generator
+    :param sigma_n: Standard deviation of noise
     :return: Filtered signal
     """
     dataset = []
     labels = []
     for _ in range(N):
         x = hp_hp_sample(T, G, f_h, lambda_h, sigma)
-        x = np.round(x.real)
+        x = np.tanh(x.real)
         x = np.expand_dims(x, axis=3)
         dataset.append(x)
         labels.append(0)
     for _ in range(N):
         x = lp_lp_sample(T, G, f_l, lambda_l, sigma)
-        x = np.round(x.real)
+        x = np.tanh(x.real)
         x = np.expand_dims(x, axis=3)
         dataset.append(x)
         labels.append(1)
     for _ in range(N):
         x = lp_hp_sample(T, G, f_l, lambda_h, sigma)
-        x = np.round(x.real)
+        x = np.tanh(x.real)
         x = np.expand_dims(x, axis=3)
         dataset.append(x)
         labels.append(2)
     for _ in range(N):
         x = hp_lp_sample(T, G, f_h, lambda_l, sigma)
-        x = np.round(x.real)
+        x = np.tanh(x.real)
         x = np.expand_dims(x, axis=3)
         dataset.append(x)
         labels.append(3)
     dataset = np.array(dataset)
+    dataset += sigma_n * np.random.randn(*dataset.shape)
+    print(dataset.shape)
+    labels = np.array(labels)
+    return dataset, labels
+
+
+def generate_spectral_samples_hard(N, T, G, f_h, lambda_h, f_l, lambda_l, sigma=10, sigma_n=0):
+    """
+    Generate dataset composed of quantized filtered hp-hp, lp-lp, hp-lp and lp-hp white noise.
+    :param N: Number of samples per type
+    :param T: Time length
+    :param G: Underlying graph
+    :param f_h: Index of hp cut frequency in time fourier domain
+    :param lambda_h: Index of hp cut frequency in graph fourier domain
+    :param f_l: Index of lp cut frequency in time fourier domain
+    :param lambda_l: Index of lp cut frequency in graph fourier domain
+    :param sigma: Standard deviation of generator
+    :param sigma_n: Standard deviation of noise
+    :return: Filtered signal
+    """
+    dataset = []
+    labels = []
+    for _ in range(N):
+        x = hp_hp_sample(T, G, f_h, lambda_h, sigma)
+        x = np.tanh(x.real)
+        x = np.expand_dims(x, axis=3)
+        dataset.append(x)
+        labels.append(0)
+    for _ in range(N):
+        x = lp_lp_sample(T, G, f_l, lambda_l, sigma)
+        x = np.tanh(x.real)
+        x = np.expand_dims(x, axis=3)
+        dataset.append(x)
+        labels.append(1)
+    for _ in range(N):
+        x = lp_hp_sample(T, G, f_l, lambda_h, sigma)
+        x = np.tanh(x.real)
+        x = np.expand_dims(x, axis=3)
+        dataset.append(x)
+        labels.append(2)
+    for _ in range(N):
+        x = hp_lp_sample(T, G, f_h, lambda_l, sigma)
+        x = np.tanh(x.real)
+        x = np.expand_dims(x, axis=3)
+        dataset.append(x)
+        labels.append(3)
+
+    # Spectral Combinations
+    for _ in range(N):
+        x = lp_lp_sample(T, G, f_h, lambda_h, sigma) + hp_hp_sample(T, G, f_h, lambda_h, sigma)
+        x = np.tanh(x.real)
+        x = np.expand_dims(x, axis=3)
+        dataset.append(x)
+        labels.append(4)
+    for _ in range(N):
+        x = lp_hp_sample(T, G, f_h, lambda_h, sigma) + hp_lp_sample(T, G, f_h, lambda_h, sigma)
+        x = np.tanh(x.real)
+        x = np.expand_dims(x, axis=3)
+        dataset.append(x)
+        labels.append(5)
+
+    dataset = np.array(dataset)
+    dataset += sigma_n * np.random.randn(*dataset.shape)
     print(dataset.shape)
     labels = np.array(labels)
     return dataset, labels

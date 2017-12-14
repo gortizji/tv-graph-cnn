@@ -16,7 +16,7 @@ from synthetic_data.data_generation import generate_spectral_samples, generate_s
 
 FLAGS = None
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
-TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "experiments"))
+TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "../experiments"))
 
 
 class TemporalGraphBatchSource:
@@ -243,7 +243,15 @@ def main(_):
 
         # Prepare pooling
         num_levels = _number_of_pooling_levels(FLAGS.vertex_poolings)
-        adjacencies, perm = coarsen(G.A, levels=num_levels)  # Coarsens in powers of 2
+        error = True
+        while error:
+            try:
+                adjacencies, perm = coarsen(G.A, levels=num_levels)  # Coarsens in powers of 2
+                error = False
+            except IndexError:
+                error = True
+                continue
+
         np.save(os.path.join(FLAGS.log_dir, "ordering"), perm)
         L = [initialize_laplacian_tensor(A) for A in adjacencies]
         L = keep_pooling_laplacians(L, FLAGS.vertex_poolings)
@@ -362,7 +370,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--log_dir',
         type=str,
-        default=os.path.join(TEMPDIR, "/signal_detection"),
+        default=os.path.join(TEMPDIR, "test/signal_classification"),
         help='Logging directory'
     )
     parser.add_argument(

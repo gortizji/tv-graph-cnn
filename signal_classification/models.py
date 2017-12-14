@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-from tv_graph_cnn.layers import fir_tv_filtering_einsum, chebyshev_convolution, jtv_chebyshev_convolution
+from tv_graph_cnn.layers import fir_tv_filtering_einsum, chebyshev_convolution, jtv_chebyshev_convolution, fir_tv_filtering_conv1d
 
 
 def _weight_variable(shape):
@@ -148,7 +148,7 @@ def _fir_tv_layer(x, L, time_filter_order, vertex_filter_order, num_filters):
         with tf.name_scope("weights"):
             hfir = _weight_variable([vertex_filter_order, time_filter_order, num_channels, num_filters])
             _variable_summaries(hfir)
-        graph_conv = fir_tv_filtering_einsum(x, L, hfir, None, "chebyshev")
+        graph_conv = fir_tv_filtering_conv1d(x, L, hfir, None, "chebyshev")
     return graph_conv
 
 

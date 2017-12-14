@@ -47,6 +47,7 @@ def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
                 Y = Yt
             else:
                 Y = tf.concat([Y, Yt], axis=2)  # BxNxTxF
+
     if b is not None:
         Y += b
     return Y
@@ -71,11 +72,14 @@ def fir_tv_filtering_conv1d(x, S, h, b, kernel="naive"):
     K, M, C, F = h.get_shape()  # K: Length vertex filter, M: Length time filter, C: In channels, F: Number of filters
 
     x = tf.reshape(x, [-1, T, C])  # BNxTxC
-    XH = []
     for k in range(K):
         XHk = tf.nn.conv1d(x, h[k, :, :, :], stride=1, padding="SAME", data_format="NHWC")  # BNxTxF
-        XH.append(tf.reshape(XHk, [-1, 1, N, T, F]))
-    XH = tf.concat(XH, axis=1)  # BxKxNxTxF
+        XHk = tf.reshape(XHk, [-1, N, T, F])
+        XHk = tf.expand_dims(XHk, axis=1)  # BxKxNxTxF
+        if k == 0:
+            XH = XHk
+        else:
+            XH = tf.concat([XH, XHk], axis=1)  # BxKxNxTxF
 
     if kernel == "naive":
         SK = _vertex_fir_kernel(S, K)  # KxNxN
@@ -85,8 +89,11 @@ def fir_tv_filtering_conv1d(x, S, h, b, kernel="naive"):
         raise ValueError("Specified kernel type {} is not valid." % kernel)
 
     # Use einstein summation for efficiency and compactness
-    Y = tf.einsum("abc,dacef->dabcf", SK, XH)  # BxKxNxTxF
+    # KxNxN, BxKxNxTxF -> BxKxNxTxF
+    # a b c  d a c g h -> d a b g h
+    Y = tf.einsum("abc,dacgh->dabgh", SK, XH)  # BxKxNxTxF
     Y = tf.einsum("abcdf->acdf", Y)  # BxNxTxF
+
     if b is not None:
         Y += b
     return Y

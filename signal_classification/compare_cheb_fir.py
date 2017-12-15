@@ -19,9 +19,10 @@ def _next_batch(log_dir):
 
 
 if __name__ == '__main__':
+    num_batches = 3
+
     # Batch parameters
     params = {
-        "--log_dir": os.path.join(TEMPDIR, "batch_"+str(_next_batch(TEMPDIR))),
         "--num_vertices": 100,
         "--num_frames": 128,
         "--num_classes": 6,
@@ -46,30 +47,35 @@ if __name__ == '__main__':
     models = ["deep_cheb", "deep_fir"]
     noises = [0.5, 1, 1.5, 2, 2.5]
 
-    with open(os.path.join(TEMPDIR, "global_params.json"), "w") as f:
-        json.dump(params, f)
+    for batch in range(num_batches):
+        params["--log_dir"] = os.path.join(TEMPDIR, "batch_"+str(_next_batch(TEMPDIR)))
+        if not os.path.exists(params["--log_dir"]):
+            os.mkdir(params["--log_dir"])
 
-    for model in models:
-        if model == "deep_cheb":
-            params["--vertex_filter_orders"] = [4, 4, 4]
-        else:
-            params["--vertex_filter_orders"] = [3, 3, 3]
+        with open(os.path.join(params["--log_dir"], "global_params.json"), "w") as f:
+            json.dump(params, f)
 
-        for sigma_n in noises:
-            args = []
+        for model in models:
+            if model == "deep_cheb":
+                params["--vertex_filter_orders"] = [4, 4, 4]
+            else:
+                params["--vertex_filter_orders"] = [3, 3, 3]
 
-            params["--model_type"] = model
-            params["--sigma_n"] = sigma_n
+            for sigma_n in noises:
+                args = []
 
-            for arg_name, value in params.items():
-                if isinstance(value, list):
-                    args.append(arg_name + " " + " ".join(str(e) for e in value))
-                else:
-                    args.append(arg_name + " " + str(value))
+                params["--model_type"] = model
+                params["--sigma_n"] = sigma_n
 
-            print("****************************************************")
-            print("Simulating %s with sigma_n %.2f" % (model, sigma_n))
+                for arg_name, value in params.items():
+                    if isinstance(value, list):
+                        args.append(arg_name + " " + " ".join(str(e) for e in value))
+                    else:
+                        args.append(arg_name + " " + str(value))
 
-            os.system("python signal_classification/test.py " + " ".join(args))
+                print("****************************************************")
+                print("Simulating %s with sigma_n %.2f" % (model, sigma_n))
+
+                os.system("python signal_classification/test.py " + " ".join(args))
 
 

@@ -1,7 +1,9 @@
 import os
-import tempfile
+import json
 
-TEMPDIR = "/users/gortizjimenez/Developer/tv_graph_cnn/signal_classification/experiments/"
+
+FILEDIR = os.path.dirname(os.path.realpath(__file__))
+TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "experiments"))
 
 
 def _next_batch(log_dir):
@@ -13,7 +15,7 @@ def _next_batch(log_dir):
             continue
         else:
             exp_numbers.append(int(file.split("_")[1]))
-    return max(exp_numbers) if len(exp_numbers) > 0 else 0
+    return max(exp_numbers)+1 if len(exp_numbers) > 0 else 0
 
 
 if __name__ == '__main__':
@@ -24,7 +26,7 @@ if __name__ == '__main__':
         "--num_frames": 128,
         "--num_classes": 6,
         "--num_train": 12000,
-        "--num_test": 1200,
+        "--num_test": 2400,
         "--sigma": 2,
         "--num_epochs": 10,
         "--learning_rate": 1e-4,
@@ -42,7 +44,10 @@ if __name__ == '__main__':
     }
 
     models = ["deep_cheb", "deep_fir"]
-    noises = [0.01, 0.1, 0.5, 1, 1.5, 2]
+    noises = [0.5, 1, 1.5, 2, 2.5]
+
+    with open(os.path.join(TEMPDIR, "global_params.json"), "w") as f:
+        json.dump(params, f)
 
     for model in models:
         if model == "deep_cheb":
@@ -52,16 +57,19 @@ if __name__ == '__main__':
 
         for sigma_n in noises:
             args = []
+
+            params["--model_type"] = model
+            params["--sigma_n"] = sigma_n
+
             for arg_name, value in params.items():
                 if isinstance(value, list):
                     args.append(arg_name + " " + " ".join(str(e) for e in value))
                 else:
                     args.append(arg_name + " " + str(value))
-            args.append("--model_type " + model)
-            args.append("--sigma_n " + str(sigma_n))
-            exit = 1
+
+            print("****************************************************")
             print("Simulating %s with sigma_n %.2f" % (model, sigma_n))
-            while exit != 0:
-                exit = os.system("python signal_classification/test.py " + " ".join(args))
+
+            os.system("python signal_classification/test.py " + " ".join(args))
 
 

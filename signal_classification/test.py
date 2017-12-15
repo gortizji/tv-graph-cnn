@@ -3,6 +3,7 @@ import os
 import argparse
 import sys
 import numpy as np
+import json
 
 from pygsp import graphs
 
@@ -293,6 +294,9 @@ def main(_):
     test_mb_source = TemporalGraphBatchSource(test_data, test_labels, repeat=False)
 
     if FLAGS.action == "train":
+        with open(os.path.join(FLAGS.log_dir, "params.json"), "w") as f:
+            json.dump(FLAGS, f)
+
         # Run training and evaluation loop
         print("Training model...")
         run_training(L, train_mb_source, test_mb_source)

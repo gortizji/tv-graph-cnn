@@ -63,8 +63,7 @@ class TemporalGraphBatchSource:
 
 def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
     (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
-    labels_one_hot = tf.one_hot(labels, FLAGS.num_classes).eval()
-    feed_dict = {x: data, y: labels_one_hot, dropout: 0.5 if is_training else 1, phase: is_training}
+    feed_dict = {x: data, y: labels, dropout: 0.5 if is_training else 1, phase: is_training}
     still_data = not is_end
     return feed_dict, still_data
 
@@ -75,7 +74,8 @@ def run_training(L, train_mb_source, test_mb_source):
     # Create data placeholders
     num_vertices, _ = L[0].get_shape()
     x = tf.placeholder(tf.float32, [None, num_vertices, FLAGS.num_frames, 1], name="x")
-    y_ = tf.placeholder(tf.float32, [None, FLAGS.num_classes], name="labels")
+    y_ = tf.placeholder(tf.uint8, name="labels")
+    y_hot = tf.one_hot(y_, FLAGS.num_classes)
 
     # Initialize model
     if FLAGS.model_type == "deep_fir":
@@ -109,13 +109,13 @@ def run_training(L, train_mb_source, test_mb_source):
 
     # Define loss
     with tf.name_scope("loss"):
-        cross_entropy = tf.losses.softmax_cross_entropy(y_, logits=logits)
+        cross_entropy = tf.losses.softmax_cross_entropy(y_hot, logits=logits)
         loss = tf.reduce_mean(cross_entropy)
         tf.summary.scalar('xentropy', loss)
 
         # Define metric
     with tf.name_scope("metric"):
-        correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(y_, 1))
+        correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(y_hot, 1))
         correct_prediction = tf.cast(correct_prediction, tf.float32, name="correct_prediction")
         accuracy = tf.reduce_mean(correct_prediction, name="accuracy")
         tf.summary.scalar('accuracy', accuracy)
@@ -294,8 +294,9 @@ def main(_):
     test_mb_source = TemporalGraphBatchSource(test_data, test_labels, repeat=False)
 
     if FLAGS.action == "train":
+        params = vars(FLAGS)
         with open(os.path.join(FLAGS.log_dir, "params.json"), "w") as f:
-            json.dump(FLAGS, f)
+            json.dump(params, f)
 
         # Run training and evaluation loop
         print("Training model...")

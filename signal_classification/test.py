@@ -4,16 +4,20 @@ import argparse
 import sys
 import numpy as np
 import json
+import matplotlib
+matplotlib.use("Agg")
 
 from pygsp import graphs
 
 import tensorflow as tf
 
-from signal_classification.models import fir_tv_fc_fn, cheb_fc_fn, jtv_cheb_fc_fn, deep_fir_tv_fc_fn, fc_fn, \
+from signal_classification.models import deep_fir_tv_fc_fn, fc_fn, \
     deep_cheb_fc_fn
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
-from synthetic_data.data_generation import generate_spectral_samples, generate_spectral_samples_hard
+from synthetic_data.data_generation import generate_spectral_samples_hard
+
+from graph_utils.visualization import plot_tf_fir_filter
 
 FLAGS = None
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
@@ -208,7 +212,7 @@ def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source,
 
 def run_eval(test_mb_source):
     with tf.Session() as sess:
-        saver = tf.train.import_meta_graph(os.path.join(FLAGS.log_dir, "model-999.meta"))
+        saver = tf.train.import_meta_graph(os.path.join(FLAGS.log_dir, "model-"+ str(_last_checkpoint(FLAGS.log_dir)) + ".meta"))
         saver.restore(sess, tf.train.latest_checkpoint(FLAGS.log_dir))
         graph = tf.get_default_graph()
 
@@ -223,12 +227,20 @@ def run_eval(test_mb_source):
 
         print("Evaluation accuracy: %.2f" % _eval_metric(sess, correct_prediction, keep_prob, phase, x, y, test_mb_source))
 
+        for idx, v in enumerate([v for v in tf.trainable_variables() if "conv" in v.name]):
+            plot_tf_fir_filter(sess, v, os.path.join(FLAGS.log_dir, "conv_%d" % idx))
+
 
 def main(_):
+
     # Initialize tempdir
-    FLAGS.log_dir = os.path.join(FLAGS.log_dir, FLAGS.model_type)
-    exp_n = _last_exp(FLAGS.log_dir) + 1 if FLAGS.action == "train" else _last_exp(FLAGS.log_dir)
-    FLAGS.log_dir = os.path.join(FLAGS.log_dir, "exp_" + str(exp_n))
+    if FLAGS.action == "eval" and FLAGS.read_dir is not None:
+        FLAGS.log_dir = FLAGS.read_dir
+    else:
+        FLAGS.log_dir = os.path.join(FLAGS.log_dir, FLAGS.model_type)
+        exp_n = _last_exp(FLAGS.log_dir) + 1 if FLAGS.action == "train" else _last_exp(FLAGS.log_dir)
+        FLAGS.log_dir = os.path.join(FLAGS.log_dir, "exp_" + str(exp_n))
+
     print(FLAGS.log_dir)
 
     if FLAGS.action == "train":
@@ -316,6 +328,20 @@ def _number_of_trainable_params():
     return np.sum([np.product(x.shape) for x in tf.trainable_variables()])
 
 
+def _last_checkpoint(log_dir):
+    checkpoints = []
+    if not os.path.exists(log_dir):
+        raise IOError("No such file or directory:", log_dir)
+
+    for file in os.listdir(log_dir):
+        if ".meta" not in file:
+            continue
+        else:
+            checkpoints.append(int(file.split("-")[1].split(".")[0]))
+
+    return max(checkpoints)
+
+
 def _last_exp(log_dir):
     exp_numbers = []
     if not os.path.exists(log_dir):
@@ -339,8 +365,13 @@ if __name__ == '__main__':
     parser.add_argument(
         "--action",
         type=str,
-        default="train",
+        default="eval",
         help="Action to perform on the model"
+    )
+    parser.add_argument(
+        "--read_dir",
+        type=str,
+        default=None
     )
     parser.add_argument(
         '--learning_rate',

@@ -1,4 +1,5 @@
 import matplotlib
+
 matplotlib.use("Agg")
 
 
@@ -37,6 +38,22 @@ def plot_temporal_matrix(x, file):
     fig.savefig(file + ".png")
 
 
+def plot_tf_fir_filter(sess, filter, file=None):
+    K, M, C, F = filter.get_shape()
+    F = int(F)
+    C = int(C)
+    fig = plt.figure()
+    weights = sess.run(filter)
+    for n in range(F):
+        plt.subplot(F // 8 + 1, 8, n+1)
+        plot_tv_fir_frequency_response(weights[:, :, np.random.randint(C), n], with_axis=False)
+
+    if file is None:
+        fig.savefig(filter.name.replace("/", "_") + ".png")
+    else:
+        fig.savefig(file + ".png")
+
+
 def plot_tv_fir_frequency_response(h, file=None, N=200, kernel="chebyshev", with_axis=True):
     K, M = h.shape
     lambdas = np.linspace(-1, 1, N)
@@ -64,13 +81,37 @@ def plot_tv_fir_frequency_response(h, file=None, N=200, kernel="chebyshev", with
         fig.savefig(file + ".png")
 
 
+def plot_chebyshev_frequency_response(h, file=None, N=200, with_axis=True):
+    K = len(h)
+    lambdas = np.linspace(-1, 1, N)
+    H = np.zeros(N, dtype=np.float32)
+    for k in range(K):
+        H += h[k] * cheb_poly(lambdas, k)
+
+    if file is not None:
+        fig = plt.figure()
+
+    plt.plot(lambdas, np.abs(H))
+
+    if with_axis:
+        plt.title("Chebyshev filter frequency response")
+        plt.xlabel("$\lambda$")
+    else:
+        plt.axis("off")
+
+    if file is not None:
+        fig.savefig(file + ".png")
+
+
 def cheb_poly(l, K):
     T_0 = 1
     T = T_0
-    if K > 1:
+
+    if K > 0:
         T_1 = l
         T = T_1
-    for k in range(2, K):
+
+    for k in range(2, K+1):
         T_2 = 2 * T_1 * l - T_0
         T_0 = T_1
         T_1 = T_2
@@ -114,6 +155,6 @@ if __name__ == '__main__':
     fig = plt.figure()
     for n in range(100):
         plt.subplot(10, 10, n+1)
-        plot_tv_fir_frequency_response(np.random.randn(3, 3), with_axis=False)
+        plot_chebyshev_frequency_response(np.random.randn(4), with_axis=False)
 
     fig.savefig("many.png")

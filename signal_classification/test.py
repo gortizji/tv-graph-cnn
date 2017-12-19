@@ -5,6 +5,7 @@ import sys
 import numpy as np
 import json
 import matplotlib
+
 matplotlib.use("Agg")
 
 from pygsp import graphs
@@ -12,7 +13,7 @@ from pygsp import graphs
 import tensorflow as tf
 
 from signal_classification.models import deep_fir_tv_fc_fn, fc_fn, \
-    deep_cheb_fc_fn
+    deep_cheb_fc_fn, deep_sep_fir_fc_fn
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
 from synthetic_data.data_generation import generate_spectral_samples_hard
@@ -102,6 +103,17 @@ def run_training(L, train_mb_source, test_mb_source):
                                         vertex_filter_orders=FLAGS.vertex_filter_orders,
                                         num_filters=FLAGS.num_filters,
                                         vertex_poolings=FLAGS.vertex_poolings)
+        dropout = tf.placeholder(tf.float32, name="keep_prob")
+    elif FLAGS.model_type == "deep_sep":
+        print("Training deep separable FIR model...")
+        logits, phase = deep_sep_fir_fc_fn(x=x,
+                                           L=L,
+                                           num_classes=FLAGS.num_classes,
+                                           time_filter_orders=FLAGS.time_filter_orders,
+                                           vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                           num_filters=FLAGS.num_filters,
+                                           time_poolings=FLAGS.time_poolings,
+                                           vertex_poolings=FLAGS.vertex_poolings)
         dropout = tf.placeholder(tf.float32, name="keep_prob")
     elif FLAGS.model_type == "fc":
         print("Training linear classifier model...")
@@ -199,7 +211,7 @@ def run_training(L, train_mb_source, test_mb_source):
                     print("--------------------")
 
 
-def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source,):
+def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source, ):
     still_data = True
     test_correct_predictions = []
     test_mb_source.restart()
@@ -212,7 +224,8 @@ def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source,
 
 def run_eval(test_mb_source):
     with tf.Session() as sess:
-        saver = tf.train.import_meta_graph(os.path.join(FLAGS.log_dir, "model-"+ str(_last_checkpoint(FLAGS.log_dir)) + ".meta"))
+        saver = tf.train.import_meta_graph(
+            os.path.join(FLAGS.log_dir, "model-" + str(_last_checkpoint(FLAGS.log_dir)) + ".meta"))
         saver.restore(sess, tf.train.latest_checkpoint(FLAGS.log_dir))
         graph = tf.get_default_graph()
 
@@ -225,14 +238,14 @@ def run_eval(test_mb_source):
         # Get output
         correct_prediction = graph.get_tensor_by_name("metric/correct_prediction:0")
 
-        print("Evaluation accuracy: %.2f" % _eval_metric(sess, correct_prediction, keep_prob, phase, x, y, test_mb_source))
+        print("Evaluation accuracy: %.2f" % _eval_metric(sess, correct_prediction, keep_prob, phase, x, y,
+                                                         test_mb_source))
 
         for idx, v in enumerate([v for v in tf.trainable_variables() if "conv" in v.name]):
             plot_tf_fir_filter(sess, v, os.path.join(FLAGS.log_dir, "conv_%d" % idx))
 
 
 def main(_):
-
     # Initialize tempdir
     if FLAGS.action == "eval" and FLAGS.read_dir is not None:
         FLAGS.log_dir = FLAGS.read_dir
@@ -359,13 +372,13 @@ if __name__ == '__main__':
     parser.add_argument(
         "--model_type",
         type=str,
-        default="deep_fir",
+        default="deep_sep",
         help="Model type"
     )
     parser.add_argument(
         "--action",
         type=str,
-        default="eval",
+        default="train",
         help="Action to perform on the model"
     )
     parser.add_argument(

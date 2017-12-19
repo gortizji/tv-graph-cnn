@@ -26,7 +26,6 @@ if __name__ == '__main__':
         "--num_vertices": 100,
         "--num_frames": 128,
         "--num_classes": 6,
-        "--num_train": 12000,
         "--num_test": 2400,
         "--sigma": 2,
         "--num_epochs": 10,
@@ -41,11 +40,12 @@ if __name__ == '__main__':
         "--f_l": 15,
         "--lambda_h": 80,
         "--lambda_l": 15,
-        "--action": "train"
+        "--action": "train",
+        "--sigma_n": 0.5
     }
 
     models = ["deep_cheb", "deep_fir"]
-    noises = [0.5, 1, 1.5, 2, 2.5]
+    num_train = [4200, 5400, 7200, 90000, 12000]
 
     for batch in range(num_batches):
         params["--log_dir"] = os.path.join(TEMPDIR, "batch_"+str(_next_batch(TEMPDIR)))
@@ -61,11 +61,11 @@ if __name__ == '__main__':
             else:
                 params["--vertex_filter_orders"] = [3, 3, 3]
 
-            for sigma_n in noises:
+            for n in num_train:
                 args = []
 
                 params["--model_type"] = model
-                params["--sigma_n"] = sigma_n
+                params["--num_train"] = n
 
                 for arg_name, value in params.items():
                     if isinstance(value, list):
@@ -74,7 +74,7 @@ if __name__ == '__main__':
                         args.append(arg_name + " " + str(value))
 
                 print("****************************************************")
-                print("Simulating %s with sigma_n %.2f" % (model, sigma_n))
+                print("Simulating %s with %.2f training samples" % (model, n))
 
                 os.system("python signal_classification/test.py " + " ".join(args))
 

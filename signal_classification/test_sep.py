@@ -47,7 +47,7 @@ if __name__ == '__main__':
 
     params["--log_dir"] = os.path.join(TEMPDIR, "batch_"+str(_next_batch(TEMPDIR)))
     if not os.path.exists(params["--log_dir"]):
-        os.mkdir(params["--log_dir"])
+        os.makedirs(params["--log_dir"])
 
     with open(os.path.join(params["--log_dir"], "global_params.json"), "w") as f:
         json.dump(params, f)

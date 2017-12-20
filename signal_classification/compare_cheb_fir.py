@@ -3,7 +3,7 @@ import json
 
 
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
-TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "experiments"))
+TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "experiments/different_sizes"))
 
 
 def _next_batch(log_dir):
@@ -19,7 +19,7 @@ def _next_batch(log_dir):
 
 
 if __name__ == '__main__':
-    num_batches = 3
+    num_batches = 5
 
     # Batch parameters
     params = {
@@ -41,11 +41,11 @@ if __name__ == '__main__':
         "--lambda_h": 80,
         "--lambda_l": 15,
         "--action": "train",
-        "--sigma_n": 0.5
+        "--sigma_n": 0.75
     }
 
     models = ["deep_cheb", "deep_fir"]
-    num_train = [4200, 5400, 7200, 90000, 12000]
+    num_train = [120, 600, 1200, 4200, 5400, 12000]
 
     for batch in range(num_batches):
         params["--log_dir"] = os.path.join(TEMPDIR, "batch_"+str(_next_batch(TEMPDIR)))

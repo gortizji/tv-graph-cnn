@@ -1,7 +1,16 @@
 import scipy
 import scipy.io as spio
+import scipy.spatial.distance as spdist
 import numpy as np
 import os
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import mne
+from pygsp import graphs
+
 
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
 BCI_IV_DIR = os.path.join(FILEDIR, "datasets/BCI_IV_2a")
@@ -9,6 +18,13 @@ SAMPLING_FREQUENCY = 250
 TRIALS_PER_RUN = 48
 RUNS_PER_SUBJECT = 6
 NUM_SUBJECTS = 9
+MONTAGE = ["FZ",
+           "FC3", "FC1", "FCZ", "FC2", "FC4",
+           "C5", "C3", "C1", "CZ", "C2", "C4", "C6",
+           "CP3", "CP1", "CPZ", "CP2", "CP4",
+           "P1", "PZ", "P2",
+           "POZ",
+           "FP1", "NZ", "FP2"]
 
 
 def loadmat(filename):
@@ -98,10 +114,31 @@ def get_trial(run, trial_number):
     return X_crop, y
 
 
+def plot_montage():
+    montage = mne.channels.read_montage(kind="standard_1005", ch_names=MONTAGE, unit="m")
+    fig = montage.plot(scale_factor=10)
+    fig.savefig("montage.jpg")
+
+
+def create_eeg_graph(q=0.05, k=0.1):
+    montage = mne.channels.read_montage(kind="standard_1005", ch_names=MONTAGE, unit="m")
+    d = spdist.pdist(montage.pos)
+    W = np.exp(- (d**2) / (2*q**2))
+    W[d>k] = 0
+    W = spdist.squareform(W)
+    G = graphs.Graph(W, lap_type="normalized", coords=montage.get_pos2d())
+    print("Created EEG-graph with q=%.2f and k=%.2f" % (q, k))
+    print("- Nodes:", G.N)
+    print("- Edges:", G.Ne)
+    return G
+
+
 if __name__ == '__main__':
     s = load_subject(8, True)
     r = load_run_from_subject(s, 5)
     X, y = get_trial(r, 47)
-    print(X.shape)
-    print(y)
-
+    plot_montage()
+    G = create_eeg_graph()
+    fig = plt.figure()
+    plt.imshow(G.W.todense())
+    fig.savefig("W.jpg")

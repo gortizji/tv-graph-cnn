@@ -18,13 +18,17 @@ SAMPLING_FREQUENCY = 250
 TRIALS_PER_RUN = 48
 RUNS_PER_SUBJECT = 6
 NUM_SUBJECTS = 9
+TRIAL_LENGTH = 4
+NUM_CLASSES = 4
+NUM_TRIALS = RUNS_PER_SUBJECT * TRIALS_PER_RUN
+SAMPLES_PER_TRIAL = SAMPLING_FREQUENCY * TRIAL_LENGTH
 MONTAGE = ["FZ",
            "FC3", "FC1", "FCZ", "FC2", "FC4",
            "C5", "C3", "C1", "CZ", "C2", "C4", "C6",
            "CP3", "CP1", "CPZ", "CP2", "CP4",
            "P1", "PZ", "P2",
            "POZ",
-           "FP1", "NZ", "FP2"]
+           "FP1", "NZ", "FP2"]   # Ordered as in BCI IV 2a dataset
 
 
 def loadmat(filename):
@@ -80,7 +84,7 @@ def loadmat(filename):
 
 def load_subject(subject_id, training=True):
     assert subject_id < NUM_SUBJECTS
-    subject_file = "A0" + str(subject_id + 1) + "T" if training else "E" + ".mat"
+    subject_file = "A0" + str(subject_id + 1) + ("T" if training else "E") + ".mat"
     mat_variables = loadmat(os.path.join(BCI_IV_DIR, subject_file))
     subject_data = mat_variables["data"]
     return subject_data
@@ -114,6 +118,22 @@ def get_trial(run, trial_number):
     return X_crop, y
 
 
+def get_subject_dataset(subject_id, training=True):
+    subject_data = load_subject(subject_id, training)
+    data = []
+    labels = []
+    for run_number in range(RUNS_PER_SUBJECT):
+        run = load_run_from_subject(subject_data, run_number)
+        for trial in range(TRIALS_PER_RUN):
+            X, y = get_trial(run, trial)
+            data.append(X)
+            labels.append(y)
+    data = np.array(data)
+    data = np.expand_dims(data, axis=-1)
+    labels = np.array(labels)
+    return data, labels
+
+
 def plot_montage():
     montage = mne.channels.read_montage(kind="standard_1005", ch_names=MONTAGE, unit="m")
     fig = montage.plot(scale_factor=10)
@@ -137,6 +157,8 @@ if __name__ == '__main__':
     s = load_subject(8, True)
     r = load_run_from_subject(s, 5)
     X, y = get_trial(r, 47)
+    data, labels = get_subject_dataset(1, False)
+    print(data.shape)
     plot_montage()
     G = create_eeg_graph()
     fig = plt.figure()

@@ -1,6 +1,6 @@
 import numpy as np
 
-from tv_graph_cnn.layers import fir_tv_filtering_conv1d, chebyshev_convolution
+from tv_graph_cnn.layers import fir_tv_filtering_conv1d
 
 import tensorflow as tf
 
@@ -51,7 +51,7 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
 
     n_layers = len(time_filter_orders)
     phase = tf.placeholder(tf.bool, name="phase")
-    keep_prob = tf.placeholder(tf.float16, name="keep_prob")
+    keep_prob = tf.placeholder(tf.float32, name="keep_prob")
 
     # Convolutional layers
     drop = x
@@ -59,7 +59,7 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
         with tf.name_scope("conv%d" % n):
             conv = _fir_tv_layer(drop, L[n], time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
             conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
-            conv = tf.nn.relu(conv, name="conv%d" % n)
+            conv = tf.nn.elu(conv, name="conv%d" % n)
 
         with tf.name_scope("subsampling%d" % n):
             tpool = tf.layers.max_pooling2d(

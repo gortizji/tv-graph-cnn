@@ -16,7 +16,7 @@ import tensorflow as tf
 
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
-from applications.eeg.data_utils import create_eeg_graph, get_subject_dataset, NUM_TRIALS, SAMPLES_PER_TRIAL, NUM_CLASSES
+from applications.eeg.data_utils import create_eeg_graph, get_subject_dataset, SAMPLES_PER_TRIAL, NUM_CLASSES, get_full_dataset
 from applications.eeg.models import deep_fir_tv_fc_fn
 
 from graph_utils.visualization import plot_tf_fir_filter
@@ -26,6 +26,7 @@ FLAGS = None
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
 TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "../experiments"))
 
+NUM_TRIALS_TEST = 0
 
 def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
     (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
@@ -94,7 +95,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
         sess.run(tf.global_variables_initializer())
 
-        MAX_STEPS = FLAGS.num_epochs * NUM_TRIALS // FLAGS.batch_size
+        MAX_STEPS = FLAGS.num_epochs * NUM_TRIALS_TEST // FLAGS.batch_size
 
         # Start training loop
         epoch_count = 0
@@ -110,7 +111,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
             duration = time.time() - start_time
 
-            if step % (NUM_TRIALS // FLAGS.batch_size) == 0:
+            if step % (NUM_TRIALS_TEST // FLAGS.batch_size) == 0:
                 print("Epoch %d" % epoch_count)
                 print("--------------------")
                 epoch_count += 1
@@ -126,7 +127,7 @@ def run_training(L, train_mb_source, test_mb_source):
                 train_writer.flush()
 
             # Save a checkpoint and evaluate the model periodically.
-            if (step + 1) % (NUM_TRIALS // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
+            if (step + 1) % (NUM_TRIALS_TEST // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model')
                 saver.save(sess, checkpoint_file, global_step=step)
 
@@ -138,7 +139,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
                 print("--------------------")
                 print('Test accuracy = %.2f' % test_accuracy)
-                if (step + 1) % (NUM_TRIALS // FLAGS.batch_size) == 0:
+                if (step + 1) % (NUM_TRIALS_TEST // FLAGS.batch_size) == 0:
                     print("====================")
                 else:
                     print("--------------------")
@@ -179,6 +180,7 @@ def run_eval(test_mb_source):
 
 
 def main(_):
+    global NUM_TRIALS_TEST
     # Initialize tempdir
     if FLAGS.action == "eval" and FLAGS.read_dir is not None:
         FLAGS.log_dir = FLAGS.read_dir
@@ -218,11 +220,19 @@ def main(_):
         perm = np.load(os.path.join(FLAGS.log_dir, "ordering.npy"))
 
     if FLAGS.action == "train":
-        train_data, train_labels = get_subject_dataset(FLAGS.subject_id, True)
+        if FLAGS.subject_id < 0:
+            train_data, train_labels = get_full_dataset(True)
+        else:
+            train_data, train_labels = get_subject_dataset(FLAGS.subject_id, True)
+
+        NUM_TRIALS_TEST = train_data.shape[0]
         train_data = perm_data(train_data, perm)
         train_mb_source = MinibatchSource(train_data, train_labels, repeat=True)
 
-    test_data, test_labels = get_subject_dataset(FLAGS.subject_id, False)
+    if FLAGS.subject_id < 0:
+        test_data, test_labels = get_full_dataset(False)
+    else:
+        test_data, test_labels = get_subject_dataset(FLAGS.subject_id, False)
 
     test_data = perm_data(test_data, perm)
     test_mb_source = MinibatchSource(test_data, test_labels, repeat=False)
@@ -310,7 +320,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--dropout",
         type=float,
-        default=1,
+        default=0.8,
         help="Dropout keep_rate"
     )
     parser.add_argument(
@@ -348,20 +358,20 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[7, 7, 7, 7],
+        default=[5, 5, 5, 5],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
         type=int,
         nargs="+",
-        default=[16, 32, 64, 128],
+        default=[8, 16, 32, 64],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
         "--subject_id",
         type=int,
-        default=0,
+        default=-1,
         help="Subject ID"
     )
     parser.add_argument(
@@ -375,7 +385,7 @@ if __name__ == '__main__':
         "--vertex_poolings",
         type=int,
         nargs="+",
-        default=[1, 1, 2, 2],
+        default=[1, 1, 4, 4],
         help="Vertex pooling sizes"
     )
     FLAGS, unparsed = parser.parse_known_args()

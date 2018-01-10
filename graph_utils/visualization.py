@@ -20,7 +20,7 @@ def plot_joint_spectrum(x, G, file, Nfft=None):
     xflambda = np.fft.fftshift(xflambda)
 
     fig = plt.figure()
-    plt.imshow(20 * np.log10(np.abs(xflambda)), origin="lower", extent=[-T // 2, T // 2, 0, N - 1])
+    plt.imshow(20 * np.log10(np.abs(xflambda)), origin="lower", extent=[-T // 2, T // 2, 0, N - 1], aspect=T/N)
     plt.colorbar()
     plt.title("JFT(x)")
     plt.xlabel("f")
@@ -30,7 +30,8 @@ def plot_joint_spectrum(x, G, file, Nfft=None):
 
 def plot_temporal_matrix(x, file):
     fig = plt.figure()
-    plt.imshow(x, origin="lower")
+    N, T = x.shape
+    plt.imshow(x, origin="lower", aspect=T/N)
     plt.colorbar()
     plt.title("Signal x")
     plt.xlabel("t")
@@ -155,6 +156,6 @@ if __name__ == '__main__':
     fig = plt.figure()
     for n in range(100):
         plt.subplot(10, 10, n+1)
-        plot_chebyshev_frequency_response(np.random.randn(4), with_axis=False)
+        plot_tv_fir_frequency_response(np.random.randn(3, 6), with_axis=False)
 
     fig.savefig("many.png")

@@ -7,13 +7,7 @@ import tensorflow as tf
 
 def _weight_variable(shape):
     """_weight_variable generates a weight variable of a given shape."""
-    initial = tf.truncated_normal(shape, stddev=1 / np.prod(shape[:-1]), dtype=tf.float32)
-    return tf.Variable(initial)
-
-
-def _bias_variable(shape):
-    """_bias_variable generates a bias variable of a given shape."""
-    initial = 0.1 * tf.ones(shape=shape, dtype=tf.float32)
+    initial = tf.truncated_normal(shape, stddev=1 / np.prod(shape[:-2]), dtype=tf.float32)
     return tf.Variable(initial)
 
 

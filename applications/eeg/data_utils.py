@@ -1,6 +1,7 @@
 import scipy
 import scipy.io as spio
 import scipy.spatial.distance as spdist
+import scipy.signal as spsig
 import numpy as np
 import os
 import matplotlib
@@ -9,6 +10,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import mne
+from graph_utils.visualization import plot_joint_spectrum, plot_temporal_matrix
 from pygsp import graphs
 
 
@@ -90,9 +92,9 @@ def load_subject(subject_id, training=True):
     return subject_data
 
 
-def load_run_from_subject(subject_data, run_number):
+def load_run_from_subject(subject_data, run_number, start_runs=3):
     assert run_number < RUNS_PER_SUBJECT
-    run = subject_data[run_number+3]  # First three runs are meaningless
+    run = subject_data[run_number+start_runs]  # First three runs are meaningless
     return run
 
 
@@ -101,7 +103,7 @@ def load_run_data(run):
 
 
 def load_run_labels(run):
-    return run.y
+    return run.y - 1
 
 
 def load_run_markers(run):
@@ -123,7 +125,7 @@ def get_subject_dataset(subject_id, training=True):
     data = []
     labels = []
     for run_number in range(RUNS_PER_SUBJECT):
-        run = load_run_from_subject(subject_data, run_number)
+        run = load_run_from_subject(subject_data, run_number, start_runs=1 if (subject_id == 3 and training) else 3)
         for trial in range(TRIALS_PER_RUN):
             X, y = get_trial(run, trial)
             data.append(X)
@@ -131,6 +133,18 @@ def get_subject_dataset(subject_id, training=True):
     data = np.array(data)
     data = np.expand_dims(data, axis=-1)
     labels = np.array(labels)
+    return data, labels
+
+
+def get_full_dataset(training=True):
+    data = []
+    labels = []
+    for id in range(NUM_SUBJECTS):
+        X_s, y_s = get_subject_dataset(id, training)
+        data.append(X_s)
+        labels.append(y_s)
+    data = np.concatenate(data, axis=0)
+    labels = np.concatenate(labels, axis=0)
     return data, labels
 
 
@@ -153,14 +167,28 @@ def create_eeg_graph(q=0.05, k=0.1):
     return G
 
 
+def plot_spectrum(class_id, subject_id, q=0.05, k=0.1):
+    data, labels = get_subject_dataset(subject_id, training=True)
+    data_class = data[labels == class_id]
+    G = create_eeg_graph(q, k)
+    idx = 0
+    b, a = spsig.butter(3, 4/SAMPLING_FREQUENCY, btype="highpass", output="ba")
+    data_filtered = spsig.lfilter(b, a, data_class[idx, :, :, 0])
+    plot_joint_spectrum(data_filtered, G, "jtv_" + str(class_id) + "_" + str(q) + "_" + str(k))
+    plot_temporal_matrix(data_filtered, "matrix_" + str(class_id) + "_" + str(q) + "_" + str(k))
+
+
 if __name__ == '__main__':
     s = load_subject(8, True)
     r = load_run_from_subject(s, 5)
     X, y = get_trial(r, 47)
     data, labels = get_subject_dataset(1, False)
     print(data.shape)
+    q = 0.03
+    k = 0.5
     plot_montage()
-    G = create_eeg_graph()
+    G = create_eeg_graph(q, k)
     fig = plt.figure()
     plt.imshow(G.W.todense())
     fig.savefig("W.jpg")
+    plot_spectrum(3, 2, q, k)

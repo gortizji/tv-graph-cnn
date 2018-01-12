@@ -306,7 +306,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=1e-4,
+        default=1e-3,
         help='Initial learning rate.'
     )
     parser.add_argument(
@@ -318,7 +318,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--dropout",
         type=float,
-        default=1,
+        default=0.5,
         help="Dropout keep_rate"
     )
     parser.add_argument(
@@ -356,7 +356,7 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[5, 5, 3],
+        default=[3, 3, 3],
         help='Convolution time order.'
     )
     parser.add_argument(
@@ -383,7 +383,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--margin",
         type=int,
-        default=32,
+        default=20,
         help="Right and left margin"
     )
     parser.add_argument(

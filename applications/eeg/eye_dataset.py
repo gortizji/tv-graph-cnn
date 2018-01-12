@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from scipy.io import arff
+import scipy.signal as spsig
 
 from tv_graph_cnn.minibatch_sources import MinibatchSource
 from applications.eeg.data_utils import plot_montage
@@ -9,6 +10,8 @@ FILEDIR = os.path.dirname(os.path.realpath(__file__))
 EYE_FILE = os.path.join(FILEDIR, "datasets/EEG_eye.arff")
 
 MONTAGE = ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']
+
+SAMPLING_FREQUENCY = 128
 
 
 class EyeMinibatchSource(MinibatchSource):
@@ -54,9 +57,9 @@ def load_data():
     X = [[node for node in sample] for sample in data]
     X = np.array(X, dtype=np.float32)
     X = X[:, :-1].T
-
-    X = X - np.tile(np.expand_dims(np.mean(X, axis=1), axis=-1), (1, X.shape[1]))
-    X = X / np.tile(np.expand_dims(np.std(X, axis=1), axis=-1), (1, X.shape[1]))
+    b, a = spsig.butter(5, 0.5 / SAMPLING_FREQUENCY, btype="highpass", output="ba")
+    X_filtered = spsig.lfilter(b, a, X)
+    X = X_filtered / np.tile(np.expand_dims(np.std(X_filtered, axis=1), axis=-1), (1, X.shape[1]))
     return X, labels
 
 
@@ -89,8 +92,14 @@ def get_snapshot(X, t, margin):
 
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+
     X, labels = load_data()
     print(X.shape)
     print(X.nbytes/1024)
     plot_montage(MONTAGE)
+
+    fig = plt.figure()
+    plt.plot(labels)
+    fig.savefig("labels.png")
 

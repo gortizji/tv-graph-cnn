@@ -76,6 +76,6 @@ if __name__ == '__main__':
                 print("****************************************************")
                 print("Simulating %s with sigma_n %.2f" % (model, sigma_n))
 
-                os.system("python signal_classification/test.py " + " ".join(args))
+                os.system("python signal_classification/test_bci.py " + " ".join(args))
 
 

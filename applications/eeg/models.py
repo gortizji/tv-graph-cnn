@@ -11,6 +11,12 @@ def _weight_variable(shape):
     return tf.Variable(initial)
 
 
+def _bias_variable(shape):
+    """_weight_variable generates a weight variable of a given shape."""
+    initial = 0.1 * tf.ones(shape)
+    return tf.Variable(initial)
+
+
 def _variable_summaries(var):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
     with tf.name_scope('summaries'):
@@ -33,12 +39,14 @@ def _fir_tv_layer(x, L, time_filter_order, vertex_filter_order, num_filters):
     with tf.name_scope("fir_tv"):
         with tf.name_scope("weights"):
             hfir = _weight_variable([vertex_filter_order, time_filter_order, num_channels, num_filters])
+            # bfir = _bias_variable([num_filters])
             _variable_summaries(hfir)
+            # _variable_summaries(bfir)
         graph_conv = fir_tv_filtering_conv1d(x, L, hfir, None, "chebyshev")
     return graph_conv
 
 
-def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_orders, num_filters, time_poolings,
+def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filters, time_poolings,
                       vertex_poolings):
     assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters) == len(time_poolings), \
         "Filter parameters should all be of the same length"
@@ -53,7 +61,7 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
         with tf.name_scope("conv%d" % n):
             conv = _fir_tv_layer(drop, L[n], time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
             conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
-            conv = tf.nn.elu(conv, name="conv%d" % n)
+            conv = tf.nn.relu(conv, name="conv%d" % n)
 
         with tf.name_scope("subsampling%d" % n):
             tpool = tf.layers.max_pooling2d(
@@ -81,8 +89,8 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
         fc_input = tf.layers.flatten(drop)
         fc = tf.layers.dense(
             inputs=fc_input,
-            units=num_classes,
-            activation=None,
+            units=1,
+            activation=tf.sigmoid,
             use_bias=True
         )
         fc = tf.identity(fc, name="fc")

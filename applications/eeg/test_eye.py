@@ -6,17 +6,17 @@ import numpy as np
 import json
 import matplotlib
 
-from tv_graph_cnn.minibatch_sources import MinibatchSource
-
 matplotlib.use("Agg")
 
 from pygsp import graphs
 
 import tensorflow as tf
 
+from applications.eeg.eye_dataset import EyeMinibatchSource, MONTAGE, load_data, train_validation_test_split
+
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
-from applications.eeg.data_utils import create_eeg_graph, get_subject_dataset, SAMPLES_PER_TRIAL, NUM_CLASSES, get_full_dataset
+from applications.eeg.data_utils import create_eeg_graph
 from applications.eeg.models import deep_fir_tv_fc_fn
 
 from graph_utils.visualization import plot_tf_fir_filter
@@ -24,9 +24,11 @@ from graph_utils.visualization import plot_tf_fir_filter
 
 FLAGS = None
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
-TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "../experiments"))
+TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "../experiments/eye"))
 
-NUM_TRIALS_TEST = 0
+EPOCH_SIZE = 0
+NUM_CLASSES = 2
+
 
 def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
     (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
@@ -40,33 +42,34 @@ def run_training(L, train_mb_source, test_mb_source):
 
     # Create data placeholders
     num_vertices, _ = L[0].get_shape()
-    x = tf.placeholder(tf.float32, [None, num_vertices, SAMPLES_PER_TRIAL, 1], name="x")
-    y_ = tf.placeholder(tf.uint8, name="labels")
-    y_hot = tf.one_hot(y_, NUM_CLASSES)
+    x = tf.placeholder(tf.float32, [None, num_vertices, 2 * FLAGS.margin], name="x")
+    x_ = tf.expand_dims(x, axis=-1)
+    y = tf.placeholder(tf.uint8, name="labels")
 
     # Initialize model
     if FLAGS.model_type == "deep_fir":
         print("Training deep FIR-TV model...")
-        logits, phase, dropout = deep_fir_tv_fc_fn(x=x,
+        out, phase, dropout = deep_fir_tv_fc_fn(x=x_,
                                                    L=L,
-                                                   num_classes=NUM_CLASSES,
                                                    time_filter_orders=FLAGS.time_filter_orders,
                                                    vertex_filter_orders=FLAGS.vertex_filter_orders,
                                                    num_filters=FLAGS.num_filters,
                                                    time_poolings=FLAGS.time_poolings,
                                                    vertex_poolings=FLAGS.vertex_poolings)
+        out = tf.squeeze(out)
     else:
         raise ValueError("model_type not valid.")
 
     # Define loss
     with tf.name_scope("loss"):
-        cross_entropy = tf.losses.softmax_cross_entropy(y_hot, logits=logits)
+        cross_entropy = tf.losses.log_loss(y, out)
         loss = tf.reduce_mean(cross_entropy)
         tf.summary.scalar('xentropy', loss)
 
         # Define metric
     with tf.name_scope("metric"):
-        correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(y_hot, 1))
+        prediction = tf.cast(tf.greater_equal(out, 0.5), tf.uint8)
+        correct_prediction = tf.equal(prediction, y)
         correct_prediction = tf.cast(correct_prediction, tf.float32, name="correct_prediction")
         accuracy = tf.reduce_mean(correct_prediction, name="accuracy")
         tf.summary.scalar('accuracy', accuracy)
@@ -95,7 +98,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
         sess.run(tf.global_variables_initializer())
 
-        MAX_STEPS = FLAGS.num_epochs * NUM_TRIALS_TEST // FLAGS.batch_size
+        MAX_STEPS = FLAGS.num_epochs * EPOCH_SIZE // FLAGS.batch_size
 
         # Start training loop
         epoch_count = 0
@@ -103,7 +106,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
             start_time = time.time()
 
-            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y_, dropout, phase, True)
+            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y, dropout, phase, True)
 
             # Perform one training iteration
             _, loss_value = sess.run([opt_train, loss],
@@ -111,13 +114,13 @@ def run_training(L, train_mb_source, test_mb_source):
 
             duration = time.time() - start_time
 
-            if step % (NUM_TRIALS_TEST // FLAGS.batch_size) == 0:
+            if step % (EPOCH_SIZE // FLAGS.batch_size) == 0:
                 print("Epoch %d" % epoch_count)
                 print("--------------------")
                 epoch_count += 1
 
             # Write the summaries and print an overview fairly often.
-            if step % 3 == 0:
+            if step % 10 == 0:
                 # Print status to stdout.
                 accuracy_value = sess.run(accuracy, feed_dict=feed_dict)
                 print('Step %d: loss = %.2f accuracy = %.2f (%.3f sec)' % (step, loss_value, accuracy_value, duration))
@@ -127,11 +130,11 @@ def run_training(L, train_mb_source, test_mb_source):
                 train_writer.flush()
 
             # Save a checkpoint and evaluate the model periodically.
-            if (step + 1) % (NUM_TRIALS_TEST // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
+            if (step + 1) % (EPOCH_SIZE // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model')
                 saver.save(sess, checkpoint_file, global_step=step)
 
-                test_accuracy = _eval_metric(sess, correct_prediction, dropout, phase, x, y_, test_mb_source)
+                test_accuracy = _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source)
 
                 test_summary = tf.Summary(value=[tf.Summary.Value(tag="test_accuracy", simple_value=test_accuracy)])
                 test_writer.add_summary(test_summary, step)
@@ -139,19 +142,21 @@ def run_training(L, train_mb_source, test_mb_source):
 
                 print("--------------------")
                 print('Test accuracy = %.2f' % test_accuracy)
-                if (step + 1) % (NUM_TRIALS_TEST // FLAGS.batch_size) == 0:
+                if (step + 1) % (EPOCH_SIZE // FLAGS.batch_size) == 0:
                     print("====================")
                 else:
                     print("--------------------")
 
 
-def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source, ):
+def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source):
     still_data = True
     test_correct_predictions = []
     test_mb_source.restart()
     while still_data:
         test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y, dropout, phase, False)
         test_correct_predictions.append(sess.run(correct_prediction, feed_dict=test_feed_dict))
+
+    test_correct_predictions = np.concatenate(test_correct_predictions, axis=0)
 
     return np.mean(test_correct_predictions)
 
@@ -180,20 +185,19 @@ def run_eval(test_mb_source):
 
 
 def main(_):
-    global NUM_TRIALS_TEST
+    global EPOCH_SIZE
     # Initialize tempdir
     if FLAGS.action == "eval" and FLAGS.read_dir is not None:
         FLAGS.log_dir = FLAGS.read_dir
     else:
         FLAGS.log_dir = os.path.join(FLAGS.log_dir, FLAGS.model_type)
-        FLAGS.log_dir = os.path.join(FLAGS.log_dir, "subject_" + str(FLAGS.subject_id))
         exp_n = _last_exp(FLAGS.log_dir) + 1 if FLAGS.action == "train" else _last_exp(FLAGS.log_dir)
         FLAGS.log_dir = os.path.join(FLAGS.log_dir, "exp_" + str(exp_n))
 
     print(FLAGS.log_dir)
 
     # Initialize data
-    G = create_eeg_graph(q=FLAGS.q, k=FLAGS.k)
+    G = create_eeg_graph(MONTAGE, q=FLAGS.q, k=FLAGS.k)
     G.compute_laplacian("normalized")
 
     if FLAGS.action == "train":
@@ -219,23 +223,17 @@ def main(_):
     elif FLAGS.action == "eval":
         perm = np.load(os.path.join(FLAGS.log_dir, "ordering.npy"))
 
+    X, y = load_data()
+    X_train, y_train, X_test, y_test = train_validation_test_split(X, y, FLAGS.test_size)
+
     if FLAGS.action == "train":
-        if FLAGS.subject_id < 0:
-            train_data, train_labels = get_full_dataset(True)
-        else:
-            train_data, train_labels = get_subject_dataset(FLAGS.subject_id, True)
+        EPOCH_SIZE = y_train.shape[0]
+        X_train = perm_data(X_train, perm)
+        train_mb_source = EyeMinibatchSource(X_train, y_train, margin=FLAGS.margin, repeat=True)
+        EPOCH_SIZE = train_mb_source.dataset_length
 
-        NUM_TRIALS_TEST = train_data.shape[0]
-        train_data = perm_data(train_data, perm)
-        train_mb_source = MinibatchSource(train_data, train_labels, repeat=True)
-
-    if FLAGS.subject_id < 0:
-        test_data, test_labels = get_full_dataset(False)
-    else:
-        test_data, test_labels = get_subject_dataset(FLAGS.subject_id, False)
-
-    test_data = perm_data(test_data, perm)
-    test_mb_source = MinibatchSource(test_data, test_labels, repeat=False)
+    X_test = perm_data(X_test, perm)
+    test_mb_source = EyeMinibatchSource(X_test, y_test,  margin=FLAGS.margin, repeat=False)
 
     if FLAGS.action == "train":
         params = vars(FLAGS)
@@ -314,31 +312,31 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=30,
+        default=100,
         help='Number of epochs to run trainer.'
     )
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.8,
+        default=1,
         help="Dropout keep_rate"
     )
     parser.add_argument(
         "--q",
         type=float,
-        default=0.05,
+        default=0.1,
         help="RBF kernel"
     )
     parser.add_argument(
         "--k",
         type=float,
-        default=0.1,
+        default=0.15,
         help="Distance threshold"
     )
     parser.add_argument(
         '--batch_size',
         type=int,
-        default=96,
+        default=512,
         help='Minibatch size in samples.'
     )
     parser.add_argument(
@@ -350,7 +348,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--vertex_filter_orders',
         type=int,
-        default=[3, 3, 2, 2],
+        default=[3, 2, 1],
         nargs="+",
         help='Convolution vertex order.'
     )
@@ -358,35 +356,41 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[5, 5, 5, 5],
+        default=[5, 5, 3],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
         type=int,
         nargs="+",
-        default=[8, 16, 32, 64],
+        default=[16, 32, 64],
         help='Number of parallel convolutional filters.'
-    )
-    parser.add_argument(
-        "--subject_id",
-        type=int,
-        default=-1,
-        help="Subject ID"
     )
     parser.add_argument(
         '--time_poolings',
         type=int,
         nargs="+",
-        default=[4, 4, 4, 4],
+        default=[2, 2, 2],
         help='Time pooling sizes.'
     )
     parser.add_argument(
         "--vertex_poolings",
         type=int,
         nargs="+",
-        default=[1, 1, 4, 4],
+        default=[2, 2, 2],
         help="Vertex pooling sizes"
+    )
+    parser.add_argument(
+        "--margin",
+        type=int,
+        default=32,
+        help="Right and left margin"
+    )
+    parser.add_argument(
+        "--test_size",
+        type=float,
+        default=7168,
+        help="Percentage left for test"
     )
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

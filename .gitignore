@@ -193,3 +193,5 @@ fabric.properties
 *.npy
 *.mat
 */datasets
+*.png
+*.arff

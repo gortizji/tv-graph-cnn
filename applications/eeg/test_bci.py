@@ -16,7 +16,7 @@ import tensorflow as tf
 
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
-from applications.eeg.data_utils import create_eeg_graph
+from applications.eeg.data_utils import create_spatial_eeg_graph
 from applications.eeg.bci_dataset import NUM_CLASSES, SAMPLES_PER_TRIAL, get_subject_dataset, get_full_dataset, MONTAGE
 from applications.eeg.models import deep_fir_tv_fc_fn
 
@@ -195,7 +195,7 @@ def main(_):
     print(FLAGS.log_dir)
 
     # Initialize data
-    G = create_eeg_graph(MONTAGE, q=FLAGS.q, k=FLAGS.k)
+    G = create_spatial_eeg_graph(MONTAGE, q=FLAGS.q, k=FLAGS.k)
     G.compute_laplacian("normalized")
 
     if FLAGS.action == "train":

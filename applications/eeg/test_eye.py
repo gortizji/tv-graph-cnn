@@ -16,11 +16,10 @@ from applications.eeg.eye_dataset import EyeMinibatchSource, MONTAGE, load_data,
 
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
-from applications.eeg.data_utils import create_eeg_graph
-from applications.eeg.models import deep_fir_tv_fc_fn
+from applications.eeg.data_utils import create_spatial_eeg_graph, create_data_eeg_graph
+from applications.eeg.models import deep_fir_tv_fc_fn, deep_cheb_fc_fn
 
 from graph_utils.visualization import plot_tf_fir_filter
-
 
 FLAGS = None
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
@@ -50,12 +49,20 @@ def run_training(L, train_mb_source, test_mb_source):
     if FLAGS.model_type == "deep_fir":
         print("Training deep FIR-TV model...")
         out, phase, dropout = deep_fir_tv_fc_fn(x=x_,
-                                                   L=L,
-                                                   time_filter_orders=FLAGS.time_filter_orders,
-                                                   vertex_filter_orders=FLAGS.vertex_filter_orders,
-                                                   num_filters=FLAGS.num_filters,
-                                                   time_poolings=FLAGS.time_poolings,
-                                                   vertex_poolings=FLAGS.vertex_poolings)
+                                                L=L,
+                                                time_filter_orders=FLAGS.time_filter_orders,
+                                                vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                                num_filters=FLAGS.num_filters,
+                                                time_poolings=FLAGS.time_poolings,
+                                                vertex_poolings=FLAGS.vertex_poolings)
+        out = tf.squeeze(out)
+    elif FLAGS.model_type == "deep_cheb":
+        print("Training deep FIR-TV model...")
+        out, phase, dropout = deep_cheb_fc_fn(x=x_,
+                                              L=L,
+                                              vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                              num_filters=FLAGS.num_filters,
+                                              vertex_poolings=FLAGS.vertex_poolings)
         out = tf.squeeze(out)
     else:
         raise ValueError("model_type not valid.")
@@ -64,6 +71,9 @@ def run_training(L, train_mb_source, test_mb_source):
     with tf.name_scope("loss"):
         cross_entropy = tf.losses.log_loss(y, out)
         loss = tf.reduce_mean(cross_entropy)
+        l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
+        l1_loss = tf.add_n([tf.norm(v, ord=1) for v in tf.trainable_variables()])
+        loss += FLAGS.weight_decay * l2_loss + FLAGS.l1_reg * l1_loss
         tf.summary.scalar('xentropy', loss)
 
         # Define metric
@@ -123,6 +133,7 @@ def run_training(L, train_mb_source, test_mb_source):
             if step % 10 == 0:
                 # Print status to stdout.
                 accuracy_value = sess.run(accuracy, feed_dict=feed_dict)
+                # print(sess.run(prediction, feed_dict=feed_dict))
                 print('Step %d: loss = %.2f accuracy = %.2f (%.3f sec)' % (step, loss_value, accuracy_value, duration))
                 # Update the events file.
                 summary_str = sess.run(summary, feed_dict=feed_dict)
@@ -154,6 +165,8 @@ def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source)
     test_mb_source.restart()
     while still_data:
         test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y, dropout, phase, False)
+        if still_data is False:
+            break
         test_correct_predictions.append(sess.run(correct_prediction, feed_dict=test_feed_dict))
 
     test_correct_predictions = np.concatenate(test_correct_predictions, axis=0)
@@ -197,7 +210,9 @@ def main(_):
     print(FLAGS.log_dir)
 
     # Initialize data
-    G = create_eeg_graph(MONTAGE, q=FLAGS.q, k=FLAGS.k)
+    X, y = load_data()
+    G = create_spatial_eeg_graph(MONTAGE, q=FLAGS.q, k=FLAGS.k)
+    #G = create_data_eeg_graph(MONTAGE, X)
     G.compute_laplacian("normalized")
 
     if FLAGS.action == "train":
@@ -223,17 +238,16 @@ def main(_):
     elif FLAGS.action == "eval":
         perm = np.load(os.path.join(FLAGS.log_dir, "ordering.npy"))
 
-    X, y = load_data()
-    X_train, y_train, X_test, y_test = train_validation_test_split(X, y, FLAGS.test_size)
+    X = perm_data(X, perm)
+    train_samples, test_samples = train_validation_test_split(len(y), FLAGS.margin, FLAGS.test_size)
 
     if FLAGS.action == "train":
-        EPOCH_SIZE = y_train.shape[0]
-        X_train = perm_data(X_train, perm)
-        train_mb_source = EyeMinibatchSource(X_train, y_train, margin=FLAGS.margin, repeat=True)
+        EPOCH_SIZE = train_samples.shape[0]
+        print(EPOCH_SIZE)
+        train_mb_source = EyeMinibatchSource(X, y, train_samples, margin=FLAGS.margin, repeat=True)
         EPOCH_SIZE = train_mb_source.dataset_length
 
-    X_test = perm_data(X_test, perm)
-    test_mb_source = EyeMinibatchSource(X_test, y_test,  margin=FLAGS.margin, repeat=False)
+    test_mb_source = EyeMinibatchSource(X, y, test_samples, margin=FLAGS.margin, repeat=False)
 
     if FLAGS.action == "train":
         params = vars(FLAGS)
@@ -306,20 +320,32 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=1e-3,
+        default=1e-4,
         help='Initial learning rate.'
     )
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=100,
+        default=250,
         help='Number of epochs to run trainer.'
     )
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.5,
+        default=0.8,
         help="Dropout keep_rate"
+    )
+    parser.add_argument(
+        "--weight_decay",
+        type=float,
+        default=1,
+        help="Weight decay strength"
+    )
+    parser.add_argument(
+        "--l1_reg",
+        type=float,
+        default=0,
+        help="l1 regularization strength"
     )
     parser.add_argument(
         "--q",
@@ -330,7 +356,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--k",
         type=float,
-        default=0.15,
+        default=0.1,
         help="Distance threshold"
     )
     parser.add_argument(
@@ -348,7 +374,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--vertex_filter_orders',
         type=int,
-        default=[3, 2, 1],
+        default=[3, 3, 2],
         nargs="+",
         help='Convolution vertex order.'
     )
@@ -356,40 +382,40 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[3, 3, 3],
+        default=[3, 3, 2],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
         type=int,
         nargs="+",
-        default=[16, 32, 64],
+        default=[20, 20, 20],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
         '--time_poolings',
         type=int,
         nargs="+",
-        default=[2, 2, 2],
+        default=[4, 2, 2],
         help='Time pooling sizes.'
     )
     parser.add_argument(
         "--vertex_poolings",
         type=int,
         nargs="+",
-        default=[2, 2, 2],
+        default=[1, 2, 2],
         help="Vertex pooling sizes"
     )
     parser.add_argument(
         "--margin",
         type=int,
-        default=20,
+        default=32,
         help="Right and left margin"
     )
     parser.add_argument(
         "--test_size",
         type=float,
-        default=7168,
+        default=0.25,
         help="Percentage left for test"
     )
     FLAGS, unparsed = parser.parse_known_args()

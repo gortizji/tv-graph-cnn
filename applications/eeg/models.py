@@ -1,13 +1,13 @@
 import numpy as np
 
-from tv_graph_cnn.layers import fir_tv_filtering_conv1d
+from tv_graph_cnn.layers import fir_tv_filtering_conv1d, chebyshev_convolution
 
 import tensorflow as tf
 
 
 def _weight_variable(shape):
     """_weight_variable generates a weight variable of a given shape."""
-    initial = tf.truncated_normal(shape, stddev=1 / np.prod(shape[:-2]), dtype=tf.float32)
+    initial = tf.truncated_normal(shape, stddev=0.01 / np.prod(shape[:-2]), dtype=tf.float32)
     return tf.Variable(initial)
 
 
@@ -46,6 +46,17 @@ def _fir_tv_layer(x, L, time_filter_order, vertex_filter_order, num_filters):
     return graph_conv
 
 
+def _cheb_conv_layer(x, L, vertex_filter_order, num_filters):
+    _, _, _, num_channels = x.get_shape()
+    num_channels = int(num_channels)
+    with tf.name_scope("fir_tv"):
+        with tf.name_scope("weights"):
+            hfir = _weight_variable([vertex_filter_order, num_channels, num_filters])
+            _variable_summaries(hfir)
+        graph_conv = chebyshev_convolution(x, L, hfir, None)
+    return graph_conv
+
+
 def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filters, time_poolings,
                       vertex_poolings):
     assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters) == len(time_poolings), \
@@ -61,7 +72,7 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
         with tf.name_scope("conv%d" % n):
             conv = _fir_tv_layer(drop, L[n], time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
             conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
-            conv = tf.nn.relu(conv, name="conv%d" % n)
+            conv = tf.nn.elu(conv, name="conv%d" % n)
 
         with tf.name_scope("subsampling%d" % n):
             tpool = tf.layers.max_pooling2d(
@@ -85,6 +96,50 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
             drop = tf.nn.dropout(vpool, keep_prob=keep_prob)
 
     # Last fully connected layer
+    with tf.name_scope("fc1"):
+        fc_input = tf.layers.flatten(drop)
+        fc = tf.layers.dense(
+            inputs=fc_input,
+            units=1,
+            activation=tf.sigmoid,
+            use_bias=True
+        )
+        fc = tf.identity(fc, name="fc2")
+
+    return fc, phase, keep_prob
+
+
+def deep_cheb_fc_fn(x, L, vertex_filter_orders, num_filters, vertex_poolings):
+    assert len(vertex_filter_orders) == len(num_filters) == len(vertex_poolings), \
+        "Filter parameters should all be of the same length"
+
+    n_layers = len(vertex_filter_orders)
+    phase = tf.placeholder(tf.bool, name="phase")
+    keep_prob = tf.placeholder(tf.float32, name="keep_prob")
+
+    # Convolutional layers
+    drop = x
+    for n in range(n_layers):
+        with tf.name_scope("conv%d" % n):
+            conv = _cheb_conv_layer(drop, L[n], vertex_filter_orders[n], num_filters[n])
+            conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
+            conv = tf.nn.elu(conv, name="conv%d" % n)
+
+        with tf.name_scope("vertex_pooling%d" % n):
+            if vertex_poolings[n] > 1:
+                vpool = tf.layers.max_pooling2d(
+                    inputs=conv,
+                    pool_size=(vertex_poolings[n], 1),
+                    padding="same",
+                    strides=(vertex_poolings[n], 1)
+                )
+            else:
+                vpool = conv
+
+        with tf.name_scope("drop%d" % n):
+            drop = tf.nn.dropout(vpool, keep_prob=keep_prob)
+
+    # Last fully connected layer
     with tf.name_scope("fc"):
         fc_input = tf.layers.flatten(drop)
         fc = tf.layers.dense(
@@ -93,6 +148,8 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
             activation=tf.sigmoid,
             use_bias=True
         )
-        fc = tf.identity(fc, name="fc")
+
+        fc = tf.identity(fc, "fc")
     return fc, phase, keep_prob
+
 

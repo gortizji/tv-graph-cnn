@@ -8,40 +8,13 @@ from pygsp import graphs
 
 import tensorflow as tf
 
+from tv_graph_cnn.minibatch_sources import MinibatchSource
 from graph_utils.laplacian import initialize_laplacian_tensor
 from source_localization.models import fir_tv_fc_fn, cheb_fc_fn
 from synthetic_data.data_generation import generate_wave_samples
 
 FLAGS = None
 TEMPDIR = "/users/gortizjimenez/tmp/"
-
-
-class TemporalGraphBatchSource:
-    def __init__(self, data, labels):
-        self.data = data
-        self.labels = labels
-        self.indices = np.random.permutation(self.dataset_length)
-        self.idx = 0
-
-    @property
-    def dataset_length(self):
-        return self.data.shape[0]
-
-    def next_batch(self, batch_size):
-
-        end_idx = self.idx + batch_size
-
-        if end_idx < self.dataset_length:
-            batch = [self.data[self.indices[self.idx:end_idx]], self.labels[self.indices[self.idx:end_idx]]]
-        else:
-            batch = [self.data[self.indices[self.idx:]], self.labels[self.indices[self.idx:]]]
-            end_idx = end_idx % self.dataset_length
-            self.indices = np.random.permutation(self.dataset_length)
-            batch[0] = np.concatenate((batch[0], self.data[self.indices[:end_idx]]), axis=0)
-            batch[1] = np.concatenate((batch[1], self.labels[self.indices[:end_idx]]), axis=0)
-        self.idx = end_idx
-
-        return batch
 
 
 def _fill_feed_dict(mb_source, x, y, dropout):
@@ -153,7 +126,7 @@ def main(_):
     W = (G.W).astype(np.float32)
 
     train_data, train_labels = generate_wave_samples(FLAGS.num_train, W, T=FLAGS.num_frames, sigma=FLAGS.sigma)
-    train_mb_source = TemporalGraphBatchSource(train_data, train_labels)
+    train_mb_source = MinibatchSource(train_data, train_labels)
 
     test_data, test_labels = generate_wave_samples(FLAGS.num_test, W, T=FLAGS.num_frames, sigma=FLAGS.sigma)
 

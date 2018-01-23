@@ -14,22 +14,25 @@ from pygsp import graphs
 
 import tensorflow as tf
 
-from signal_classification.models import deep_fir_tv_fc_fn, fc_fn, \
-    deep_cheb_fc_fn
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
-from synthetic_data.data_generation import generate_spectral_samples_hard
+from applications.eeg.data_utils import create_spatial_eeg_graph
+from applications.eeg.bci_dataset import NUM_CLASSES, SAMPLES_PER_TRIAL, get_subject_dataset, get_full_dataset, MONTAGE
+from applications.eeg.models import deep_fir_tv_fc_fn
 
 from graph_utils.visualization import plot_tf_fir_filter
+
 
 FLAGS = None
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
 TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "../experiments"))
 
+EPOCH_SIZE = 0
+
 
 def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
     (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
-    feed_dict = {x: data, y: labels, dropout: 0.5 if is_training else 1, phase: is_training}
+    feed_dict = {x: data, y: labels, dropout: FLAGS.dropout if is_training else 1, phase: is_training}
     still_data = not is_end
     return feed_dict, still_data
 
@@ -39,37 +42,21 @@ def run_training(L, train_mb_source, test_mb_source):
 
     # Create data placeholders
     num_vertices, _ = L[0].get_shape()
-    x = tf.placeholder(tf.float32, [None, num_vertices, FLAGS.num_frames, 1], name="x")
+    x = tf.placeholder(tf.float32, [None, num_vertices, SAMPLES_PER_TRIAL, 1], name="x")
     y_ = tf.placeholder(tf.uint8, name="labels")
-    y_hot = tf.one_hot(y_, FLAGS.num_classes)
+    y_hot = tf.one_hot(y_, NUM_CLASSES)
 
     # Initialize model
     if FLAGS.model_type == "deep_fir":
         print("Training deep FIR-TV model...")
-        logits, phase = deep_fir_tv_fc_fn(x=x,
-                                          L=L,
-                                          num_classes=FLAGS.num_classes,
-                                          time_filter_orders=FLAGS.time_filter_orders,
-                                          vertex_filter_orders=FLAGS.vertex_filter_orders,
-                                          num_filters=FLAGS.num_filters,
-                                          time_poolings=FLAGS.time_poolings,
-                                          vertex_poolings=FLAGS.vertex_poolings)
-        dropout = tf.placeholder(tf.float32, name="keep_prob")
-    elif FLAGS.model_type == "deep_cheb":
-        print("Training deep Chebyshev time invariant model...")
-        xt = tf.transpose(x, perm=[0, 1, 3, 2])
-        logits, phase = deep_cheb_fc_fn(x=xt,
-                                        L=L,
-                                        num_classes=FLAGS.num_classes,
-                                        vertex_filter_orders=FLAGS.vertex_filter_orders,
-                                        num_filters=FLAGS.num_filters,
-                                        vertex_poolings=FLAGS.vertex_poolings)
-        dropout = tf.placeholder(tf.float32, name="keep_prob")
-    elif FLAGS.model_type == "fc":
-        print("Training linear classifier model...")
-        logits = fc_fn(x, FLAGS.num_classes)
-        dropout = tf.placeholder(tf.float32, name="keep_prob")
-        phase = tf.placeholder(tf.bool, name="phase")
+        logits, phase, dropout = deep_fir_tv_fc_fn(x=x,
+                                                   L=L,
+                                                   num_classes=NUM_CLASSES,
+                                                   time_filter_orders=FLAGS.time_filter_orders,
+                                                   vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                                   num_filters=FLAGS.num_filters,
+                                                   time_poolings=FLAGS.time_poolings,
+                                                   vertex_poolings=FLAGS.vertex_poolings)
     else:
         raise ValueError("model_type not valid.")
 
@@ -110,7 +97,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
         sess.run(tf.global_variables_initializer())
 
-        MAX_STEPS = FLAGS.num_epochs * FLAGS.num_train // FLAGS.batch_size
+        MAX_STEPS = FLAGS.num_epochs * EPOCH_SIZE // FLAGS.batch_size
 
         # Start training loop
         epoch_count = 0
@@ -126,13 +113,13 @@ def run_training(L, train_mb_source, test_mb_source):
 
             duration = time.time() - start_time
 
-            if step % (FLAGS.num_train // FLAGS.batch_size) == 0:
+            if step % (EPOCH_SIZE // FLAGS.batch_size) == 0:
                 print("Epoch %d" % epoch_count)
                 print("--------------------")
                 epoch_count += 1
 
             # Write the summaries and print an overview fairly often.
-            if step % 10 == 0:
+            if step % 3 == 0:
                 # Print status to stdout.
                 accuracy_value = sess.run(accuracy, feed_dict=feed_dict)
                 print('Step %d: loss = %.2f accuracy = %.2f (%.3f sec)' % (step, loss_value, accuracy_value, duration))
@@ -142,8 +129,7 @@ def run_training(L, train_mb_source, test_mb_source):
                 train_writer.flush()
 
             # Save a checkpoint and evaluate the model periodically.
-            if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS or (
-                    step + 1) % 30 == 0:
+            if (step + 1) % (EPOCH_SIZE // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model')
                 saver.save(sess, checkpoint_file, global_step=step)
 
@@ -155,13 +141,13 @@ def run_training(L, train_mb_source, test_mb_source):
 
                 print("--------------------")
                 print('Test accuracy = %.2f' % test_accuracy)
-                if (step + 1) % (FLAGS.num_train // FLAGS.batch_size) == 0:
+                if (step + 1) % (EPOCH_SIZE // FLAGS.batch_size) == 0:
                     print("====================")
                 else:
                     print("--------------------")
 
 
-def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source,):
+def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source):
     still_data = True
     test_correct_predictions = []
     test_mb_source.restart()
@@ -174,7 +160,8 @@ def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source,
 
 def run_eval(test_mb_source):
     with tf.Session() as sess:
-        saver = tf.train.import_meta_graph(os.path.join(FLAGS.log_dir, "model-"+ str(_last_checkpoint(FLAGS.log_dir)) + ".meta"))
+        saver = tf.train.import_meta_graph(
+            os.path.join(FLAGS.log_dir, "model-" + str(_last_checkpoint(FLAGS.log_dir)) + ".meta"))
         saver.restore(sess, tf.train.latest_checkpoint(FLAGS.log_dir))
         graph = tf.get_default_graph()
 
@@ -187,34 +174,34 @@ def run_eval(test_mb_source):
         # Get output
         correct_prediction = graph.get_tensor_by_name("metric/correct_prediction:0")
 
-        print("Evaluation accuracy: %.2f" % _eval_metric(sess, correct_prediction, keep_prob, phase, x, y, test_mb_source))
+        print("Evaluation accuracy: %.2f" % _eval_metric(sess, correct_prediction, keep_prob, phase, x, y,
+                                                         test_mb_source))
 
         for idx, v in enumerate([v for v in tf.trainable_variables() if "conv" in v.name]):
             plot_tf_fir_filter(sess, v, os.path.join(FLAGS.log_dir, "conv_%d" % idx))
 
 
 def main(_):
-
+    global EPOCH_SIZE
     # Initialize tempdir
     if FLAGS.action == "eval" and FLAGS.read_dir is not None:
         FLAGS.log_dir = FLAGS.read_dir
     else:
         FLAGS.log_dir = os.path.join(FLAGS.log_dir, FLAGS.model_type)
+        FLAGS.log_dir = os.path.join(FLAGS.log_dir, "subject_" + str(FLAGS.subject_id))
         exp_n = _last_exp(FLAGS.log_dir) + 1 if FLAGS.action == "train" else _last_exp(FLAGS.log_dir)
         FLAGS.log_dir = os.path.join(FLAGS.log_dir, "exp_" + str(exp_n))
 
     print(FLAGS.log_dir)
 
+    # Initialize data
+    G = create_spatial_eeg_graph(MONTAGE, q=FLAGS.q, k=FLAGS.k)
+    G.compute_laplacian("normalized")
+
     if FLAGS.action == "train":
         if tf.gfile.Exists(FLAGS.log_dir):
             tf.gfile.DeleteRecursively(FLAGS.log_dir)
         tf.gfile.MakeDirs(FLAGS.log_dir)
-
-        # Initialize data
-        G = graphs.Community(FLAGS.num_vertices, seed=FLAGS.seed)
-        G.compute_laplacian("normalized")
-        # Save graph
-        np.save(os.path.join(FLAGS.log_dir, "graph_weights"), G.W.todense())
 
         # Prepare pooling
         num_levels = _number_of_pooling_levels(FLAGS.vertex_poolings)
@@ -232,37 +219,22 @@ def main(_):
         L = keep_pooling_laplacians(L, FLAGS.vertex_poolings)
 
     elif FLAGS.action == "eval":
-        W = np.load(os.path.join(FLAGS.log_dir, "graph_weights.npy"))
-        G = graphs.Graph(W)
-        G.compute_laplacian("normalized")
         perm = np.load(os.path.join(FLAGS.log_dir, "ordering.npy"))
 
     if FLAGS.action == "train":
-        train_data, train_labels = generate_spectral_samples_hard(
-            N=FLAGS.num_train // FLAGS.num_classes,
-            G=G,
-            T=FLAGS.num_frames,
-            f_h=FLAGS.f_h,
-            f_l=FLAGS.f_h,
-            lambda_h=FLAGS.lambda_h,
-            lambda_l=FLAGS.lambda_l,
-            sigma=FLAGS.sigma,
-            sigma_n=FLAGS.sigma_n
-        )
+        if FLAGS.subject_id < 0:
+            train_data, train_labels = get_full_dataset(True)
+        else:
+            train_data, train_labels = get_subject_dataset(FLAGS.subject_id, True)
+
+        NUM_TRIALS_TEST = train_data.shape[0]
         train_data = perm_data(train_data, perm)
         train_mb_source = MinibatchSource(train_data, train_labels, repeat=True)
 
-    test_data, test_labels = generate_spectral_samples_hard(
-        N=FLAGS.num_test // FLAGS.num_classes,
-        G=G,
-        T=FLAGS.num_frames,
-        f_h=FLAGS.f_h,
-        f_l=FLAGS.f_h,
-        lambda_h=FLAGS.lambda_h,
-        lambda_l=FLAGS.lambda_l,
-        sigma=FLAGS.sigma,
-        sigma_n=FLAGS.sigma_n
-    )
+    if FLAGS.subject_id < 0:
+        test_data, test_labels = get_full_dataset(False)
+    else:
+        test_data, test_labels = get_subject_dataset(FLAGS.subject_id, False)
 
     test_data = perm_data(test_data, perm)
     test_mb_source = MinibatchSource(test_data, test_labels, repeat=False)
@@ -344,54 +316,43 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=1,
+        default=30,
         help='Number of epochs to run trainer.'
     )
     parser.add_argument(
-        '--num_train',
-        type=int,
-        default=12000,
-        help='Number of training samples.'
+        "--dropout",
+        type=float,
+        default=0.8,
+        help="Dropout keep_rate"
     )
     parser.add_argument(
-        '--num_test',
-        type=int,
-        default=1200,
-        help='Number of test samples.'
+        "--q",
+        type=float,
+        default=0.05,
+        help="RBF kernel"
+    )
+    parser.add_argument(
+        "--k",
+        type=float,
+        default=0.1,
+        help="Distance threshold"
     )
     parser.add_argument(
         '--batch_size',
         type=int,
-        default=100,
+        default=96,
         help='Minibatch size in samples.'
     )
     parser.add_argument(
         '--log_dir',
         type=str,
-        default=os.path.join(TEMPDIR, "test/signal_classification"),
+        default=os.path.join(TEMPDIR, "test"),
         help='Logging directory'
-    )
-    parser.add_argument(
-        "--seed",
-        default=15,
-        help="Seed to create the random graph"
-    )
-    parser.add_argument(
-        '--num_vertices',
-        type=int,
-        default=100,
-        help='Number of graph vertices.'
-    )
-    parser.add_argument(
-        '--num_frames',
-        type=int,
-        default=128,
-        help='Number of temporal frames.'
     )
     parser.add_argument(
         '--vertex_filter_orders',
         type=int,
-        default=[3, 3, 3],
+        default=[3, 3, 2, 2],
         nargs="+",
         help='Convolution vertex order.'
     )
@@ -399,71 +360,35 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[3, 3, 3],
+        default=[5, 5, 5, 5],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
         type=int,
         nargs="+",
-        default=[8, 16, 32],
+        default=[8, 16, 32, 64],
         help='Number of parallel convolutional filters.'
+    )
+    parser.add_argument(
+        "--subject_id",
+        type=int,
+        default=-1,
+        help="Subject ID"
     )
     parser.add_argument(
         '--time_poolings',
         type=int,
         nargs="+",
-        default=[4, 4, 4],
+        default=[4, 4, 4, 4],
         help='Time pooling sizes.'
     )
     parser.add_argument(
         "--vertex_poolings",
         type=int,
         nargs="+",
-        default=[2, 2, 2],
+        default=[1, 1, 4, 4],
         help="Vertex pooling sizes"
-    )
-    parser.add_argument(
-        '--f_h',
-        type=int,
-        default=50,
-        help='High pass cut frequency (time)'
-    )
-    parser.add_argument(
-        '--f_l',
-        type=int,
-        default=15,
-        help='Low pass cut frequency (time)'
-    )
-    parser.add_argument(
-        '--lambda_h',
-        type=int,
-        default=80,
-        help='High pass cut frequency (graph)'
-    )
-    parser.add_argument(
-        '--lambda_l',
-        type=int,
-        default=15,
-        help='low pass cut frequency (graph)'
-    )
-    parser.add_argument(
-        '--sigma',
-        type=float,
-        default=2,
-        help='Source standard deviation.'
-    )
-    parser.add_argument(
-        '--sigma_n',
-        type=float,
-        default=1,
-        help='Noise standard deviation.'
-    )
-    parser.add_argument(
-        '--num_classes',
-        type=int,
-        default=6,
-        help='Number of classes to separate.'
     )
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

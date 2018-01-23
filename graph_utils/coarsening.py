@@ -217,7 +217,7 @@ assert (compute_perm([np.array([4, 1, 1, 2, 2, 3, 0, 0, 3]), np.array([2, 1, 0, 
         == [[3, 4, 0, 9, 1, 2, 5, 8, 6, 7, 10, 11], [2, 4, 1, 3, 0, 5], [0, 1, 2]])
 
 
-def perm_data(x, indices):
+def _perm_data_4dim(x, indices):
     """
     Permute data matrix, i.e. exchange node ids,
     so that binary unions form the clustering tree.
@@ -239,6 +239,46 @@ def perm_data(x, indices):
         else:
             xnew[:, i, :, :] = np.zeros((B, T, C))
     return xnew
+
+
+def _perm_data_2dim(x, indices):
+    """
+    Permute data matrix, i.e. exchange node ids,
+    so that binary unions form the clustering tree.
+    """
+    if indices is None:
+        return x
+
+    N, T = x.shape
+    Nnew = len(indices)
+    assert Nnew >= N
+    xnew = np.empty((Nnew, T))
+    for i, j in enumerate(indices):
+        # Existing vertex, i.e. real data.
+        if j < N:
+            xnew[i, :] = x[j, :]
+        # Fake vertex because of singeltons.
+        # They will stay 0 so that max pooling chooses the singelton.
+        # Or -infty ?
+        else:
+            xnew[i, :] = np.zeros(T)
+    return xnew
+
+
+def perm_data(x, indices):
+    """
+    Permute data matrix, i.e. exchange node ids,
+    so that binary unions form the clustering tree.
+    """
+    if indices is None:
+        return x
+
+    if len(x.shape) == 2:
+        return _perm_data_2dim(x, indices)
+    elif len(x.shape) == 4:
+        return _perm_data_4dim(x, indices)
+    else:
+        raise ValueError("Data matrix must have 2 or 4 dimensions")
 
 
 def perm_adjacency(A, indices):

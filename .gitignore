@@ -192,6 +192,7 @@ fabric.properties
 *.json
 *.npy
 
+*.mat
 */datasets
 *.png
 *.arff

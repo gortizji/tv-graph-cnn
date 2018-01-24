@@ -2,9 +2,12 @@ import numpy as np
 import h5py
 import os
 
+from pygsp import graphs
+
 from sklearn.model_selection import train_test_split
 
 from tv_graph_cnn.minibatch_sources import MinibatchSource
+from graph_utils.coarsening import perm_data
 
 
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
@@ -13,9 +16,10 @@ DATASET_FILE = os.path.join(FILEDIR, "datasets/SEIRS.mat")
 
 class EpidemyHDF5MinibatchSource(MinibatchSource):
 
-    def __init__(self, hdf5_file, samples, repeat=False, samples_memory_size=100, runs_same_memory=5):
+    def __init__(self, hdf5_file, samples, repeat=False, perm=None, samples_memory_size=100, runs_same_memory=5):
 
         self.hdf5_file = hdf5_file
+        self.perm = perm
 
         self.samples = samples
         if samples_memory_size < self.all_dataset_length:
@@ -37,15 +41,27 @@ class EpidemyHDF5MinibatchSource(MinibatchSource):
             self.hdf5_length = _hdf5_length(f)
             X, cp, Tim, _ = _unpack_variables(f)
 
-            X_current = X[self.current_samples, :, :]
+            X_current = self._load_current_data(X)
+            print(X_current.shape)
             y = _combine_params(cp, Tim)
 
         super(EpidemyHDF5MinibatchSource, self).__init__(X_current, y[self.current_samples], repeat=repeat)
-        print("Created!")
+        print("Created MinibatchSource with %d samples out of %d!" % (self.all_dataset_length, self.hdf5_length))
+
+    def _load_current_data(self, X):
+        if self.perm is not None:
+            X_current = perm_data(X[self.current_samples, :, :], self.perm)
+        else:
+            X_current = X[self.current_samples, :, :]
+        return X_current
 
     @property
     def all_dataset_length(self):
         return len(self.samples)
+
+    @property
+    def time_length(self):
+        return self.data.shape[2]
 
     def next_batch(self, batch_size):
         batch, _ = super(EpidemyHDF5MinibatchSource, self).next_batch(batch_size)
@@ -54,13 +70,12 @@ class EpidemyHDF5MinibatchSource(MinibatchSource):
 
             if self.repeat:
                 if self.run_counts >= self.runs_same_memory:
-                    self.update_current_samples()
+                    self._update_current_samples()
                     self.run_counts = 0
 
             else:
-                self.update_current_samples()
                 if self.run_counts < self.max_runs:
-                    self.update_current_samples()
+                    self._update_current_samples()
                     self.end = False
                     self.idx = 0
                     if batch_size - len(batch[0]) > 0:
@@ -68,9 +83,10 @@ class EpidemyHDF5MinibatchSource(MinibatchSource):
                         batch[0] = np.concatenate([batch[0], batch_missing[0]], axis=0)
                         batch[1] = np.concatenate([batch[1], batch_missing[1]], axis=0)
 
+        batch = (batch[0], batch[1][:, 0], batch[1][:, 1])
         return batch, self.end
 
-    def update_current_samples(self):
+    def _update_current_samples(self):
         if self.repeat:
             self.current_samples = np.sort(np.random.choice(self.samples, self.samples_memory_size, replace=False))
         else:
@@ -81,7 +97,7 @@ class EpidemyHDF5MinibatchSource(MinibatchSource):
 
         with h5py.File(self.hdf5_file) as f:
             X, cp, Tim, A = _unpack_variables(f)
-            self.data = np.array(X[self.current_samples, :, :])
+            self.data = self._load_current_data(X)
             self.labels = _combine_params(cp, Tim)[self.current_samples]
 
 
@@ -102,20 +118,34 @@ def _hdf5_length(f):
     return len(cp)
 
 
-def create_train_test_mb_sources(hdf5_file, test_size, samples_memory_size=5000, runs_same_memory=20):
+def create_graph(hdf5_file):
+    with h5py.File(hdf5_file, "r") as f:
+        _, _, _, A = _unpack_variables(f)
+        G = graphs.Graph(A, lap_type="normalized")
+    return G
+
+
+def create_train_test_mb_sources(hdf5_file, test_size, perm=None, samples_memory_size=5000, runs_same_memory=20):
     with h5py.File(hdf5_file, "r") as f:
         n_samples = _hdf5_length(f)
 
     idx_train, idx_test = train_test_split(np.arange(n_samples), test_size=test_size)
     print("Creating train MinibatchSource...")
-    train_mb_source = EpidemyHDF5MinibatchSource(hdf5_file, idx_train, repeat=True, samples_memory_size=samples_memory_size, runs_same_memory=runs_same_memory)
+    train_mb_source = EpidemyHDF5MinibatchSource(hdf5_file, idx_train,
+                                                 repeat=True,
+                                                 perm=perm,
+                                                 samples_memory_size=samples_memory_size,
+                                                 runs_same_memory=runs_same_memory)
     print("Creating test MinibatchSource...")
-    test_mb_source = EpidemyHDF5MinibatchSource(hdf5_file, idx_test, repeat=False, samples_memory_size=samples_memory_size)
+    test_mb_source = EpidemyHDF5MinibatchSource(hdf5_file, idx_test,
+                                                repeat=False,
+                                                perm=perm,
+                                                samples_memory_size=samples_memory_size)
     print("MinibatchSources created")
 
     return train_mb_source, test_mb_source
 
 
 if __name__ == '__main__':
-    a, b = create_train_test_mb_sources(DATASET_FILE, 0.1)
+    a, b = create_train_test_mb_sources(DATASET_FILE, 0.2)
 

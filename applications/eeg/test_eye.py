@@ -69,7 +69,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
     # Define loss
     with tf.name_scope("loss"):
-        cross_entropy = tf.losses.log_loss(y, out)
+        cross_entropy = tf.losses.log_loss(y, out, reduction=tf.losses.Reduction.NONE)
         loss = tf.reduce_mean(cross_entropy)
         l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
         l1_loss = tf.add_n([tf.norm(v, ord=1) for v in tf.trainable_variables()])

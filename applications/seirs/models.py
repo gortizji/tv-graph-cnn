@@ -65,7 +65,7 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
     phase = tf.placeholder(tf.bool, name="phase")
     keep_prob = tf.placeholder(tf.float32, name="keep_prob")
 
-    #x_noisy = x + tf.random_normal(tf.shape(x), mean=0, stddev=0.1)
+    #x_noisy = x + tf.random_normal(tf.shape(x), mean=0, stddev=0.001)
 
     # Convolutional layers
     drop = x
@@ -100,24 +100,13 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
     with tf.name_scope("fc"):
         fc_input = tf.layers.flatten(drop)
 
-        fc_cp = tf.layers.dense(
+        out = tf.layers.dense(
             inputs=fc_input,
-            units=1,
+            units=2,
             activation=None,
             kernel_initializer=tf.glorot_normal_initializer(),
             use_bias=False
         )
-
-        fc_tim = tf.layers.dense(
-            inputs=fc_input,
-            units=1,
-            activation=None,
-            kernel_initializer=tf.glorot_normal_initializer(),
-            use_bias=False
-        )
-
-        out = tf.stack([fc_cp, fc_tim], axis=1)
-        out = tf.squeeze(out)
 
     return out, phase, keep_prob
 

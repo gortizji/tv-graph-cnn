@@ -321,7 +321,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=1e-2,
+        default=1e-5,
         help='Initial learning rate.'
     )
     parser.add_argument(
@@ -363,7 +363,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--vertex_filter_orders',
         type=int,
-        default=[3, 3, 2],
+        default=[3, 3, 2, 2],
         nargs="+",
         help='Convolution vertex order.'
     )
@@ -371,28 +371,28 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[3, 3, 3],
+        default=[3, 3, 3, 3],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
         type=int,
         nargs="+",
-        default=[10, 20, 30],
+        default=[16, 32, 64, 128],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
         '--time_poolings',
         type=int,
         nargs="+",
-        default=[3, 3, 3],
+        default=[3, 2, 2, 2],
         help='Time pooling sizes.'
     )
     parser.add_argument(
         "--vertex_poolings",
         type=int,
         nargs="+",
-        default=[4, 2, 2],
+        default=[2, 2, 2, 2],
         help="Vertex pooling sizes"
     )
     parser.add_argument(

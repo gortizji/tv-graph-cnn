@@ -1,6 +1,7 @@
 import numpy as np
 import h5py
 import os
+import gc
 
 from pygsp import graphs
 
@@ -102,6 +103,8 @@ class EpidemyHDF5MinibatchSource(MinibatchSource):
             X, cp, Tim, A = _unpack_variables(f)
             self.data, self.labels = self._load_current_data(X, cp, Tim)
 
+        gc.collect()
+
 
 def _combine_params(cp, Tim):
     return np.concatenate([np.array(cp), np.array(Tim)], axis=1)
@@ -112,15 +115,13 @@ def _unpack_variables(f):
     Tim = f["Tim"]
     A = f["A"]
     X = f["X"]
-    mean_X = np.mean(X, axis=(1, 2))
-    cp = np.log10(cp)
-    mean_cp = np.mean(cp)
-    std_cp = np.std(cp)
-    mean_tim = np.mean(Tim)
-    std_tim = np.std(Tim)
-    X = X - mean_X[:, np.newaxis, np.newaxis]
-    cp = (cp - mean_cp) / std_cp
-    Tim = (Tim - mean_tim) / std_tim
+    #cp = np.log10(cp)
+    #mean_cp = np.mean(cp)
+    #std_cp = np.std(cp)
+    #mean_tim = np.mean(Tim)
+    #std_tim = np.std(Tim)
+    #cp = (cp - mean_cp) / std_cp
+    #Tim = (Tim - mean_tim) / std_tim
     return X, cp, Tim, A
 
 

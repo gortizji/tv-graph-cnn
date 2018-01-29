@@ -26,9 +26,9 @@ EPOCH_SIZE = 0
 NUM_CLASSES = 2
 
 
-def _fill_feed_dict(mb_source, x, y_cp, y_tim, dropout, phase, is_training):
-    (data, cp, tim), is_end = mb_source.next_batch(FLAGS.batch_size)
-    feed_dict = {x: data, y_cp: cp, y_tim: tim, dropout: FLAGS.dropout if is_training else 1, phase: is_training}
+def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
+    (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
+    feed_dict = {x: data, y: labels, dropout: FLAGS.dropout if is_training else 1, phase: is_training}
     still_data = not is_end
     return feed_dict, still_data
 
@@ -41,27 +41,25 @@ def run_training(L, train_mb_source, test_mb_source):
     time_length = train_mb_source.time_length
     x = tf.placeholder(tf.float32, [None, num_vertices, time_length], name="x")
     x_ = tf.expand_dims(x, axis=-1)
-    y_cp = tf.placeholder(tf.float32, name="cp")
-    y_tim = tf.placeholder(tf.float32, name="tim")
+    y = tf.placeholder(tf.float32, [None, 2], name="y")
 
     # Initialize model
     if FLAGS.model_type == "deep_fir":
         print("Training deep FIR-TV model...")
-        out_cp, out_tim, phase, dropout = deep_fir_tv_fc_fn(x=x_,
-                                                            L=L,
-                                                            time_filter_orders=FLAGS.time_filter_orders,
-                                                            vertex_filter_orders=FLAGS.vertex_filter_orders,
-                                                            num_filters=FLAGS.num_filters,
-                                                            time_poolings=FLAGS.time_poolings,
-                                                            vertex_poolings=FLAGS.vertex_poolings)
+        out, phase, dropout = deep_fir_tv_fc_fn(x=x_,
+                                                    L=L,
+                                                    time_filter_orders=FLAGS.time_filter_orders,
+                                                    vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                                    num_filters=FLAGS.num_filters,
+                                                    time_poolings=FLAGS.time_poolings,
+                                                    vertex_poolings=FLAGS.vertex_poolings)
     else:
         raise ValueError("model_type not valid.")
 
     # Define loss
     with tf.name_scope("loss"):
-        mse_tim = (y_tim - out_tim) ** 2 / out_tim
-        mse_cp = (y_cp - out_cp) ** 2 / out_cp
-        loss = tf.reduce_mean(mse_tim + mse_cp)
+        mse = tf.losses.mean_squared_error(y, out, reduction=tf.losses.Reduction.NONE)
+        loss = tf.reduce_mean(mse)
         l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
         l1_loss = tf.add_n([tf.norm(v, ord=1) for v in tf.trainable_variables()])
         loss += FLAGS.weight_decay * l2_loss + FLAGS.l1_reg * l1_loss
@@ -69,16 +67,15 @@ def run_training(L, train_mb_source, test_mb_source):
 
         # Define metric
     with tf.name_scope("metric"):
-        rmse_tim = tf.sqrt(mse_tim)
-        rmse_cp = tf.sqrt(mse_cp)
-        metric = rmse_cp + rmse_tim
+        metric = tf.sqrt(mse)
         mean_metric = tf.reduce_mean(metric)
-        tf.summary.scalar('metric', metric)
+        tf.summary.scalar('metric', mean_metric)
 
     extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(extra_update_ops):
         # Select optimizer
         optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
+        # optimizer = tf.train.GradientDescentOptimizer(learning_rate=FLAGS.learning_rate)
         global_step = tf.Variable(0, name='global_step', trainable=False)
         opt_train = optimizer.minimize(loss, global_step=global_step)
 
@@ -107,7 +104,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
             start_time = time.time()
 
-            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y_cp, y_tim, dropout, phase, True)
+            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y, dropout, phase, True)
 
             # Perform one training iteration
             _, loss_value = sess.run([opt_train, loss],
@@ -123,6 +120,7 @@ def run_training(L, train_mb_source, test_mb_source):
             # Write the summaries and print an overview fairly often.
             if step % 10 == 0:
                 # Print status to stdout.
+                feed_dict[phase] = False
                 metric_value = sess.run(mean_metric, feed_dict=feed_dict)
                 # print(sess.run(prediction, feed_dict=feed_dict))
                 print('Step %d: loss = %.2f metric = %.2f (%.3f sec)' % (step, loss_value, metric_value, duration))
@@ -130,55 +128,53 @@ def run_training(L, train_mb_source, test_mb_source):
                 summary_str = sess.run(summary, feed_dict=feed_dict)
                 train_writer.add_summary(summary_str, step)
                 train_writer.flush()
-
-                checkpoint_file = os.path.join(FLAGS.log_dir, 'model')
-                saver.save(sess, checkpoint_file, global_step=step)
-
-                test_metric = _eval_metric(sess, metric, dropout, phase, x, y_cp, y_tim, test_mb_source)
-
-                test_summary = tf.Summary(value=[tf.Summary.Value(tag="test_metric", simple_value=test_metric)])
-                test_writer.add_summary(test_summary, step)
-                test_writer.flush()
-
-                print("--------------------")
-                print('Test accuracy = %.2f' % test_metric)
-                if (step + 1) % (EPOCH_SIZE // FLAGS.batch_size) == 0:
-                    print("====================")
-                else:
-                    print("--------------------")
+                #
+                # checkpoint_file = os.path.join(FLAGS.log_dir, 'model')
+                # saver.save(sess, checkpoint_file, global_step=step)
+                #
+                # test_metric = _eval_metric(sess, metric, dropout, phase, x, y, test_mb_source)
+                #
+                # test_summary = tf.Summary(value=[tf.Summary.Value(tag="test_metric", simple_value=test_metric)])
+                # test_writer.add_summary(test_summary, step)
+                # test_writer.flush()
+                #
+                # print("--------------------")
+                # print('Test loss = %.2f' % test_metric)
+                # if (step + 1) % (EPOCH_SIZE // FLAGS.batch_size) == 0:
+                #     print("====================")
+                # else:
+                #     print("--------------------")
 
             # Save a checkpoint and evaluate the model periodically.
             if (step + 1) % (EPOCH_SIZE // FLAGS.batch_size) == 0 or (step + 1) == MAX_STEPS:
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model')
                 saver.save(sess, checkpoint_file, global_step=step)
 
-                test_metric = _eval_metric(sess, metric, dropout, phase, x, y_cp, y_tim, test_mb_source)
+                test_metric = _eval_metric(sess, metric, dropout, phase, x, y, test_mb_source)
 
                 test_summary = tf.Summary(value=[tf.Summary.Value(tag="test_metric", simple_value=test_metric)])
                 test_writer.add_summary(test_summary, step)
                 test_writer.flush()
+                print(sess.run(tf.squeeze(out), feed_dict=feed_dict)[0:10])
+                print(sess.run(y, feed_dict)[0:10])
 
                 print("--------------------")
-                print('Test accuracy = %.2f' % test_metric)
+                print('Test loss = %.2f' % test_metric)
                 if (step + 1) % (EPOCH_SIZE // FLAGS.batch_size) == 0:
                     print("====================")
                 else:
                     print("--------------------")
 
 
-def _eval_metric(sess, rmse, dropout, phase, x, y_cp, y_tim, test_mb_source):
+def _eval_metric(sess, rmse, dropout, phase, x, y_cp, test_mb_source):
     still_data = True
     metrics = []
     test_mb_source.restart()
     while still_data:
-        test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y_cp, y_tim, dropout, phase, False)
+        test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y_cp, dropout, phase, False)
         if still_data is False:
             break
         metrics.append(sess.run(rmse, feed_dict=test_feed_dict))
-
-    # print(metrics)
-
-    metrics = np.concatenate(metrics, axis=0)
 
     return np.mean(metrics)
 
@@ -297,6 +293,12 @@ def _last_exp(log_dir):
     return max(exp_numbers) if len(exp_numbers) > 0 else 0
 
 
+def _log10(x):
+    numerator = tf.log(x)
+    denominator = tf.log(tf.constant(10, dtype=numerator.dtype))
+    return numerator / denominator
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -319,7 +321,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=5e-3,
+        default=1e-2,
         help='Initial learning rate.'
     )
     parser.add_argument(
@@ -349,7 +351,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--batch_size',
         type=int,
-        default=20,
+        default=120,
         help='Minibatch size in samples.'
     )
     parser.add_argument(
@@ -361,7 +363,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--vertex_filter_orders',
         type=int,
-        default=[3, 3, 3, 3],
+        default=[3, 3, 2],
         nargs="+",
         help='Convolution vertex order.'
     )
@@ -369,34 +371,34 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[5, 5, 3, 2],
+        default=[3, 3, 3],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
         type=int,
         nargs="+",
-        default=[10, 20, 30, 40],
+        default=[10, 20, 30],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
         '--time_poolings',
         type=int,
         nargs="+",
-        default=[4, 4, 3, 2],
+        default=[3, 3, 3],
         help='Time pooling sizes.'
     )
     parser.add_argument(
         "--vertex_poolings",
         type=int,
         nargs="+",
-        default=[4, 4, 4, 2],
+        default=[4, 2, 2],
         help="Vertex pooling sizes"
     )
     parser.add_argument(
         "--test_size",
         type=float,
-        default=0.2,
+        default=0.1,
         help="Percentage left for test"
     )
     FLAGS, unparsed = parser.parse_known_args()

@@ -7,7 +7,8 @@ import tensorflow as tf
 
 def _weight_variable(shape):
     """_weight_variable generates a weight variable of a given shape."""
-    initial = tf.truncated_normal(shape, stddev=1 / np.prod(shape[:-2]), dtype=tf.float32)
+    initial = tf.truncated_normal(shape, stddev=1 / np.prod(shape[:-1]), dtype=tf.float32)
+    #initial = tf.random_uniform(shape, minval=)
     return tf.Variable(initial)
 
 
@@ -64,6 +65,8 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
     phase = tf.placeholder(tf.bool, name="phase")
     keep_prob = tf.placeholder(tf.float32, name="keep_prob")
 
+    #x_noisy = x + tf.random_normal(tf.shape(x), mean=0, stddev=0.1)
+
     # Convolutional layers
     drop = x
     for n in range(n_layers):
@@ -96,23 +99,25 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
     # Last fully connected layer
     with tf.name_scope("fc"):
         fc_input = tf.layers.flatten(drop)
+
         fc_cp = tf.layers.dense(
             inputs=fc_input,
             units=1,
-            activation=tf.sigmoid,
-            use_bias=True
+            activation=None,
+            kernel_initializer=tf.glorot_normal_initializer(),
+            use_bias=False
         )
-        fc_cp = tf.identity(fc_cp, name="fc_cp")
 
         fc_tim = tf.layers.dense(
             inputs=fc_input,
             units=1,
-            activation=tf.nn.relu,
-            use_bias=True
+            activation=None,
+            kernel_initializer=tf.glorot_normal_initializer(),
+            use_bias=False
         )
-        fc_tim = tf.identity(fc_tim, name="fc_tim")
 
-    return fc_cp, fc_tim, phase, keep_prob
+        out = tf.stack([fc_cp, fc_tim], axis=1)
+        out = tf.squeeze(out)
 
-
+    return out, phase, keep_prob
 

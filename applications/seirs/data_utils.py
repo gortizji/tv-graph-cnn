@@ -41,19 +41,23 @@ class EpidemyHDF5MinibatchSource(MinibatchSource):
             self.hdf5_length = _hdf5_length(f)
             X, cp, Tim, _ = _unpack_variables(f)
 
-            X_current = self._load_current_data(X)
-            print(X_current.shape)
-            y = _combine_params(cp, Tim)
+            X_current, y_current = self._load_current_data(X, cp, Tim)
 
-        super(EpidemyHDF5MinibatchSource, self).__init__(X_current, y[self.current_samples], repeat=repeat)
+        super(EpidemyHDF5MinibatchSource, self).__init__(X_current, y_current, repeat=repeat)
         print("Created MinibatchSource with %d samples out of %d!" % (self.all_dataset_length, self.hdf5_length))
 
-    def _load_current_data(self, X):
+    def _load_current_data(self, X, cp, Tim):
         if self.perm is not None:
             X_current = perm_data(X[self.current_samples, :, :], self.perm)
         else:
             X_current = X[self.current_samples, :, :]
-        return X_current
+
+        y = _combine_params(cp, Tim)
+        y_current = y[self.current_samples]
+
+        #mean_X = np.mean(X_current, axis=(1, 2))
+        #X_current = X_current - mean_X[:, np.newaxis, np.newaxis]
+        return X_current, y_current
 
     @property
     def all_dataset_length(self):
@@ -83,7 +87,6 @@ class EpidemyHDF5MinibatchSource(MinibatchSource):
                         batch[0] = np.concatenate([batch[0], batch_missing[0]], axis=0)
                         batch[1] = np.concatenate([batch[1], batch_missing[1]], axis=0)
 
-        batch = (batch[0], batch[1][:, 0], batch[1][:, 1])
         return batch, self.end
 
     def _update_current_samples(self):
@@ -97,8 +100,7 @@ class EpidemyHDF5MinibatchSource(MinibatchSource):
 
         with h5py.File(self.hdf5_file) as f:
             X, cp, Tim, A = _unpack_variables(f)
-            self.data = self._load_current_data(X)
-            self.labels = _combine_params(cp, Tim)[self.current_samples]
+            self.data, self.labels = self._load_current_data(X, cp, Tim)
 
 
 def _combine_params(cp, Tim):
@@ -110,6 +112,15 @@ def _unpack_variables(f):
     Tim = f["Tim"]
     A = f["A"]
     X = f["X"]
+    mean_X = np.mean(X, axis=(1, 2))
+    cp = np.log10(cp)
+    mean_cp = np.mean(cp)
+    std_cp = np.std(cp)
+    mean_tim = np.mean(Tim)
+    std_tim = np.std(Tim)
+    X = X - mean_X[:, np.newaxis, np.newaxis]
+    cp = (cp - mean_cp) / std_cp
+    Tim = (Tim - mean_tim) / std_tim
     return X, cp, Tim, A
 
 
@@ -125,7 +136,7 @@ def create_graph(hdf5_file):
     return G
 
 
-def create_train_test_mb_sources(hdf5_file, test_size, perm=None, samples_memory_size=5000, runs_same_memory=20):
+def create_train_test_mb_sources(hdf5_file, test_size, perm=None, samples_memory_size=10000, runs_same_memory=2):
     with h5py.File(hdf5_file, "r") as f:
         n_samples = _hdf5_length(f)
 

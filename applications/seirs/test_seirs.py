@@ -241,7 +241,7 @@ def main(_):
     elif FLAGS.action == "eval":
         perm = np.load(os.path.join(FLAGS.log_dir, "ordering.npy"))
 
-    train_mb_source, test_mb_source = create_train_test_mb_sources(DATASET_FILE, FLAGS.test_size, perm=perm)
+    train_mb_source, test_mb_source = create_train_test_mb_sources(DATASET_FILE, FLAGS.test_size, perm=perm, n_samples=FLAGS.n_samples)
     EPOCH_SIZE = train_mb_source.dataset_length
 
     if FLAGS.action == "train":
@@ -398,8 +398,14 @@ if __name__ == '__main__':
     parser.add_argument(
         "--test_size",
         type=float,
-        default=0.1,
+        default=0.2,
         help="Percentage left for test"
+    )
+    parser.add_argument(
+        "--n_samples",
+        type=int,
+        default=5000,
+        help="Total number of samples to use"
     )
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

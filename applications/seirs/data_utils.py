@@ -115,7 +115,7 @@ def _unpack_variables(f):
     Tim = f["Tim"]
     A = f["A"]
     X = f["X"]
-    #cp = np.log10(cp)
+    cp = 10 * np.log10(cp)
     #mean_cp = np.mean(cp)
     #std_cp = np.std(cp)
     #mean_tim = np.mean(Tim)
@@ -137,9 +137,10 @@ def create_graph(hdf5_file):
     return G
 
 
-def create_train_test_mb_sources(hdf5_file, test_size, perm=None, samples_memory_size=10000, runs_same_memory=2):
-    with h5py.File(hdf5_file, "r") as f:
-        n_samples = _hdf5_length(f)
+def create_train_test_mb_sources(hdf5_file, test_size, perm=None, n_samples=None, samples_memory_size=10000, runs_same_memory=2):
+    if n_samples is None:
+        with h5py.File(hdf5_file, "r") as f:
+            n_samples = _hdf5_length(f)
 
     idx_train, idx_test = train_test_split(np.arange(n_samples), test_size=test_size)
     print("Creating train MinibatchSource...")

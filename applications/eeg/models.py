@@ -7,7 +7,7 @@ import tensorflow as tf
 
 def _weight_variable(shape):
     """_weight_variable generates a weight variable of a given shape."""
-    initial = tf.truncated_normal(shape, stddev=0.01 / np.prod(shape[:-2]), dtype=tf.float32)
+    initial = tf.truncated_normal(shape, stddev=1 / np.prod(shape[:-1]), dtype=tf.float32)
     return tf.Variable(initial)
 
 
@@ -102,7 +102,8 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
             inputs=fc_input,
             units=1,
             activation=tf.sigmoid,
-            use_bias=True
+            kernel_initializer=tf.glorot_normal_initializer(),
+            use_bias=False
         )
         fc = tf.identity(fc, name="fc2")
 
@@ -146,6 +147,7 @@ def deep_cheb_fc_fn(x, L, vertex_filter_orders, num_filters, vertex_poolings):
             inputs=fc_input,
             units=1,
             activation=tf.sigmoid,
+            kernel_initializer=tf.glorot_normal_initializer(),
             use_bias=True
         )
 

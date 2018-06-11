@@ -117,30 +117,6 @@ def train_validation_test_split(dataset_length, margin, test_size, validation_si
         return train_times, test_times
 
 
-# def train_validation_test_split(X, y, test_size, validation_size=0):
-#     dataset_length = len(y)
-#     if test_size < 1:
-#         start_val = int(dataset_length * (1 - validation_size - test_size))
-#         start_test = int(dataset_length * (1 - test_size))
-#     else:
-#         start_val = dataset_length - validation_size - test_size
-#         start_test = dataset_length - test_size
-#
-#     X_train = X[:, :start_val]
-#     y_train = y[:start_val]
-#
-#     X_test = X[:, start_test:]
-#     y_test = y[start_test:]
-#
-#     if validation_size > 0:
-#         X_val = X[:, start_val:start_test]
-#         y_val = y[start_val:start_test]
-#
-#         return X_train, y_train, X_val, y_val, X_test, y_test
-#     else:
-#         return X_train, y_train, X_test, y_test
-
-
 def get_snapshot(X, t, margin):
     return X[:, t - margin:t + margin]
 

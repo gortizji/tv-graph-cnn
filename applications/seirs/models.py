@@ -110,3 +110,51 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
 
     return out, phase, keep_prob
 
+
+def deep_cheb_fc_fn(x, L, vertex_filter_orders, num_filters,
+                      vertex_poolings):
+    assert len(vertex_filter_orders) == len(num_filters) == len(vertex_poolings), \
+        "Filter parameters should all be of the same length"
+
+    n_layers = len(vertex_filter_orders)
+    phase = tf.placeholder(tf.bool, name="phase")
+    keep_prob = tf.placeholder(tf.float32, name="keep_prob")
+
+    #x_noisy = x + tf.random_normal(tf.shape(x), mean=0, stddev=0.001)
+
+    # Convolutional layers
+    drop = x
+    for n in range(n_layers):
+        with tf.name_scope("conv%d" % n):
+            conv = _cheb_conv_layer(drop, L[n], vertex_filter_orders[n], num_filters[n])
+            conv = _batch_normalization(conv, is_training=phase, scope="conv%d" % n)
+            conv = tf.nn.elu(conv, name="conv%d" % n)
+
+        with tf.name_scope("vertex_pooling%d" % n):
+            if vertex_poolings[n] > 1:
+                vpool = tf.layers.max_pooling2d(
+                    inputs=conv,
+                    pool_size=(vertex_poolings[n], 1),
+                    padding="same",
+                    strides=(vertex_poolings[n], 1)
+                )
+            else:
+                vpool = conv
+
+        with tf.name_scope("drop%d" % n):
+            drop = tf.nn.dropout(vpool, keep_prob=keep_prob)
+
+    # Last fully connected layer
+    with tf.name_scope("fc"):
+        fc_input = tf.layers.flatten(drop)
+
+        out = tf.layers.dense(
+            inputs=fc_input,
+            units=2,
+            activation=None,
+            kernel_initializer=tf.glorot_normal_initializer(),
+            use_bias=False
+        )
+
+    return out, phase, keep_prob
+

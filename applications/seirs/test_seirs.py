@@ -12,7 +12,7 @@ from applications.seirs.data_utils import create_train_test_mb_sources, DATASET_
 
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, keep_pooling_laplacians
-from applications.seirs.models import deep_fir_tv_fc_fn
+from applications.seirs.models import deep_fir_tv_fc_fn, deep_cheb_fc_fn
 
 from graph_utils.visualization import plot_tf_fir_filter
 
@@ -53,6 +53,14 @@ def run_training(L, train_mb_source, test_mb_source):
                                                     num_filters=FLAGS.num_filters,
                                                     time_poolings=FLAGS.time_poolings,
                                                     vertex_poolings=FLAGS.vertex_poolings)
+    elif FLAGS.model_type == "deep_cheb":
+        print("Training deep FIR-TV model...")
+        out, phase, dropout = deep_cheb_fc_fn(x=x_,
+                                              L=L,
+                                              vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                              num_filters=FLAGS.num_filters,
+                                              vertex_poolings=FLAGS.vertex_poolings)
+        out = tf.squeeze(out)
     else:
         raise ValueError("model_type not valid.")
 
@@ -304,7 +312,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--model_type",
         type=str,
-        default="deep_fir",
+        default="deep_cheb",
         help="Model type"
     )
     parser.add_argument(
@@ -378,7 +386,7 @@ if __name__ == '__main__':
         '--num_filters',
         type=int,
         nargs="+",
-        default=[16, 32, 64, 128],
+        default=[32, 64, 128, 128],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(

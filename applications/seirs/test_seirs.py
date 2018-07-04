@@ -67,9 +67,9 @@ def run_training(L, train_mb_source, test_mb_source):
 
         # Define metric
     with tf.name_scope("metric"):
-        metric = tf.sqrt(mse)
-        mean_metric = tf.reduce_mean(metric)
-        tf.summary.scalar('metric', mean_metric)
+        total_sum_squares = tf.losses.mean_squared_error(tf.reduce_mean(y) * tf.ones_like(out), out, reduction=tf.losses.Reduction.SUM)
+        metric = 1 - tf.divide(tf.reduce_sum(mse), total_sum_squares)
+        tf.summary.scalar('metric', metric)
 
     extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(extra_update_ops):
@@ -121,7 +121,7 @@ def run_training(L, train_mb_source, test_mb_source):
             if step % 10 == 0:
                 # Print status to stdout.
                 feed_dict[phase] = False
-                metric_value = sess.run(mean_metric, feed_dict=feed_dict)
+                metric_value = sess.run(metric, feed_dict=feed_dict)
                 # print(sess.run(prediction, feed_dict=feed_dict))
                 print('Step %d: loss = %.2f metric = %.2f (%.3f sec)' % (step, loss_value, metric_value, duration))
                 # Update the events file.

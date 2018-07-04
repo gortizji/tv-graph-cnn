@@ -64,6 +64,9 @@ def run_training(L, train_mb_source, test_mb_source):
     with tf.name_scope("loss"):
         cross_entropy = tf.losses.softmax_cross_entropy(y_hot, logits=logits)
         loss = tf.reduce_mean(cross_entropy)
+        l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()])
+        l1_loss = tf.add_n([tf.norm(v, ord=1) for v in tf.trainable_variables()])
+        loss += FLAGS.weight_decay * l2_loss + FLAGS.l1_reg * l1_loss
         tf.summary.scalar('xentropy', loss)
 
         # Define metric
@@ -98,6 +101,7 @@ def run_training(L, train_mb_source, test_mb_source):
         sess.run(tf.global_variables_initializer())
 
         MAX_STEPS = FLAGS.num_epochs * EPOCH_SIZE // FLAGS.batch_size
+
 
         # Start training loop
         epoch_count = 0
@@ -231,6 +235,8 @@ def main(_):
         train_data = perm_data(train_data, perm)
         train_mb_source = MinibatchSource(train_data, train_labels, repeat=True)
 
+        EPOCH_SIZE = train_mb_source.dataset_length
+
     if FLAGS.subject_id < 0:
         test_data, test_labels = get_full_dataset(False)
     else:
@@ -238,7 +244,7 @@ def main(_):
 
     test_data = perm_data(test_data, perm)
     test_mb_source = MinibatchSource(test_data, test_labels, repeat=False)
-
+    print(test_mb_source.dataset_length)
     if FLAGS.action == "train":
         params = vars(FLAGS)
         with open(os.path.join(FLAGS.log_dir, "params.json"), "w") as f:
@@ -310,19 +316,19 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=1e-4,
+        default=1e-5,
         help='Initial learning rate.'
     )
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=30,
+        default=100,
         help='Number of epochs to run trainer.'
     )
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.8,
+        default=1,
         help="Dropout keep_rate"
     )
     parser.add_argument(
@@ -340,7 +346,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--batch_size',
         type=int,
-        default=96,
+        default=24,
         help='Minibatch size in samples.'
     )
     parser.add_argument(
@@ -350,9 +356,21 @@ if __name__ == '__main__':
         help='Logging directory'
     )
     parser.add_argument(
+        "--weight_decay",
+        type=float,
+        default=1e-1,
+        help="Weight decay strength"
+    )
+    parser.add_argument(
+        "--l1_reg",
+        type=float,
+        default=0,
+        help="l1 regularization strength"
+    )
+    parser.add_argument(
         '--vertex_filter_orders',
         type=int,
-        default=[3, 3, 2, 2],
+        default=[3, 3, 3, 3, 3],
         nargs="+",
         help='Convolution vertex order.'
     )
@@ -360,34 +378,34 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[5, 5, 5, 5],
+        default=[5, 5, 5, 3, 3],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
         type=int,
         nargs="+",
-        default=[8, 16, 32, 64],
+        default=[16, 16, 16, 16, 16],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
         "--subject_id",
         type=int,
-        default=-1,
+        default=2,
         help="Subject ID"
     )
     parser.add_argument(
         '--time_poolings',
         type=int,
         nargs="+",
-        default=[4, 4, 4, 4],
+        default=[4, 4, 4, 4, 3],
         help='Time pooling sizes.'
     )
     parser.add_argument(
         "--vertex_poolings",
         type=int,
         nargs="+",
-        default=[1, 1, 4, 4],
+        default=[1, 1, 1, 1, 1],
         help="Vertex pooling sizes"
     )
     FLAGS, unparsed = parser.parse_known_args()

@@ -2,12 +2,14 @@ import os
 
 import numpy as np
 import scipy
+import scipy.signal as spsig
 from scipy import io as spio
 
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
 BCI_IV_DIR = os.path.join(FILEDIR, "datasets/BCI_IV_2a")
 SAMPLING_FREQUENCY = 250
 TRIALS_PER_RUN = 48
+TRIAL_SUBDIVISIONS = 4
 RUNS_PER_SUBJECT = 6
 NUM_SUBJECTS = 9
 TRIAL_LENGTH = 4
@@ -19,8 +21,8 @@ MONTAGE = ["FZ",
            "C5", "C3", "C1", "CZ", "C2", "C4", "C6",
            "CP3", "CP1", "CPZ", "CP2", "CP4",
            "P1", "PZ", "P2",
-           "POZ",
-           "FP1", "NZ", "FP2"]   # Ordered as in BCI IV 2a dataset
+           "POZ"]
+           #"FP1", "NZ", "FP2"]   # Ordered as in BCI IV 2a dataset
 
 
 def loadmat(filename):
@@ -100,13 +102,20 @@ def load_run_markers(run):
     return run.trial
 
 
-def get_trial(run, trial_number):
-    assert trial_number < TRIALS_PER_RUN
+def get_trial(run, sample_number):
+    assert sample_number < (TRIALS_PER_RUN * TRIAL_SUBDIVISIONS)
     markers = load_run_markers(run)
+    trial_number = sample_number // TRIAL_SUBDIVISIONS
     start = markers[trial_number]
     y = load_run_labels(run)[trial_number]
     X = load_run_data(run)
-    X_crop = X[:, (start + 2 * SAMPLING_FREQUENCY):(start + 6 * SAMPLING_FREQUENCY)]  # Trial data between 2 and 6 secs
+    sub_offset = 2 + (4 / TRIAL_SUBDIVISIONS) * (sample_number % TRIAL_SUBDIVISIONS)
+    X_crop = X[:, (start + 2 * SAMPLING_FREQUENCY):(start + sub_offset * SAMPLING_FREQUENCY)]  # Trial data between 2 and 6 secs
+    X_crop = X_crop[:-3, :]
+    b, a = spsig.butter(3, Wn=4 / SAMPLING_FREQUENCY, analog=False, output="ba", btype="high")
+    X_crop = spsig.filtfilt(b, a, X_crop, axis=1)
+    #X_crop = X_crop - np.tile(np.expand_dims(np.mean(X_crop, axis=1), axis=-1), (1, X_crop.shape[1]))
+    X_crop = X_crop / np.tile(np.expand_dims(np.std(X_crop, axis=1), axis=-1), (1, X_crop.shape[1]))
     return X_crop, y
 
 
@@ -116,7 +125,7 @@ def get_subject_dataset(subject_id, training=True):
     labels = []
     for run_number in range(RUNS_PER_SUBJECT):
         run = load_run_from_subject(subject_data, run_number, start_runs=1 if (subject_id == 3 and training) else 3)
-        for trial in range(TRIALS_PER_RUN):
+        for trial in range(TRIALS_PER_RUN * TRIAL_SUBDIVISIONS):
             X, y = get_trial(run, trial)
             data.append(X)
             labels.append(y)

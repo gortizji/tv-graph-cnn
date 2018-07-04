@@ -26,9 +26,9 @@ def _variable_summaries(var):
 def _batch_normalization(input, is_training=True, scope=None):
     # Note: is_training is tf.placeholder(tf.bool) type
     return tf.cond(is_training,
-                   lambda: tf.contrib.layers.batch_norm(input, is_training=True, decay=0.8,
+                   lambda: tf.contrib.layers.batch_norm(input, is_training=True, decay=0.9,
                                                         center=False, updates_collections=None, scope=scope),
-                   lambda: tf.contrib.layers.batch_norm(input, is_training=False, decay=0.8,
+                   lambda: tf.contrib.layers.batch_norm(input, is_training=False, decay=0.9,
                                                         updates_collections=None, center=False, scope=scope,
                                                         reuse=True))
 
@@ -58,7 +58,7 @@ def _cheb_conv_layer(x, L, vertex_filter_order, num_filters):
 
 
 def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filters, time_poolings,
-                      vertex_poolings):
+                      vertex_poolings, num_classes):
     assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters) == len(time_poolings), \
         "Filter parameters should all be of the same length"
 
@@ -100,8 +100,8 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
         fc_input = tf.layers.flatten(drop)
         fc = tf.layers.dense(
             inputs=fc_input,
-            units=1,
-            activation=tf.sigmoid,
+            units=num_classes,
+            activation=None,
             kernel_initializer=tf.glorot_normal_initializer(),
             use_bias=False
         )

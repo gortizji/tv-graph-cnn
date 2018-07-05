@@ -54,7 +54,7 @@ def run_training(L, train_mb_source, test_mb_source):
                                                     time_poolings=FLAGS.time_poolings,
                                                     vertex_poolings=FLAGS.vertex_poolings)
     elif FLAGS.model_type == "deep_cheb":
-        print("Training deep FIR-TV model...")
+        print("Training deep Chebyshev model...")
         out, phase, dropout = deep_cheb_fc_fn(x=x_,
                                               L=L,
                                               vertex_filter_orders=FLAGS.vertex_filter_orders,
@@ -386,7 +386,7 @@ if __name__ == '__main__':
         '--num_filters',
         type=int,
         nargs="+",
-        default=[32, 64, 128, 128],
+        default=[16, 32, 64, 128],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(

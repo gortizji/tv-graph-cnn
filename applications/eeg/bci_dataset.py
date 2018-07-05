@@ -9,7 +9,8 @@ FILEDIR = os.path.dirname(os.path.realpath(__file__))
 BCI_IV_DIR = os.path.join(FILEDIR, "datasets/BCI_IV_2a")
 SAMPLING_FREQUENCY = 250
 TRIALS_PER_RUN = 48
-TRIAL_SUBDIVISIONS = 4
+SAMPLE_SIZE = 100
+STEP_SIZE = 5
 RUNS_PER_SUBJECT = 6
 NUM_SUBJECTS = 9
 TRIAL_LENGTH = 4
@@ -102,19 +103,17 @@ def load_run_markers(run):
     return run.trial
 
 
-def get_trial(run, sample_number):
-    assert sample_number < (TRIALS_PER_RUN * TRIAL_SUBDIVISIONS)
+def get_trial(run, sample_number, offset):
+    assert sample_number < (TRIALS_PER_RUN)
     markers = load_run_markers(run)
-    trial_number = sample_number // TRIAL_SUBDIVISIONS
+    trial_number = sample_number
     start = markers[trial_number]
     y = load_run_labels(run)[trial_number]
     X = load_run_data(run)
-    sub_offset = 2 + (4 / TRIAL_SUBDIVISIONS) * (sample_number % TRIAL_SUBDIVISIONS)
-    X_crop = X[:, (start + 2 * SAMPLING_FREQUENCY):(start + sub_offset * SAMPLING_FREQUENCY)]  # Trial data between 2 and 6 secs
+    X_crop = X[:, (start + offset):(start + offset + SAMPLE_SIZE)]  # Trial data between 2 and 6 secs
     X_crop = X_crop[:-3, :]
-    b, a = spsig.butter(3, Wn=4 / SAMPLING_FREQUENCY, analog=False, output="ba", btype="high")
+    b, a = spsig.butter(3, Wn=(4 / SAMPLING_FREQUENCY), analog=False, output="ba", btype="high")
     X_crop = spsig.filtfilt(b, a, X_crop, axis=1)
-    #X_crop = X_crop - np.tile(np.expand_dims(np.mean(X_crop, axis=1), axis=-1), (1, X_crop.shape[1]))
     X_crop = X_crop / np.tile(np.expand_dims(np.std(X_crop, axis=1), axis=-1), (1, X_crop.shape[1]))
     return X_crop, y
 
@@ -123,12 +122,14 @@ def get_subject_dataset(subject_id, training=True):
     subject_data = load_subject(subject_id, training)
     data = []
     labels = []
+    print(TRIAL_LENGTH * SAMPLING_FREQUENCY - SAMPLE_SIZE)
     for run_number in range(RUNS_PER_SUBJECT):
         run = load_run_from_subject(subject_data, run_number, start_runs=1 if (subject_id == 3 and training) else 3)
-        for trial in range(TRIALS_PER_RUN * TRIAL_SUBDIVISIONS):
-            X, y = get_trial(run, trial)
-            data.append(X)
-            labels.append(y)
+        for trial in range(TRIALS_PER_RUN):
+            for offset in range(0, TRIAL_LENGTH * SAMPLING_FREQUENCY - SAMPLE_SIZE, STEP_SIZE):
+                X, y = get_trial(run, trial, offset)
+                data.append(X)
+                labels.append(y)
     data = np.array(data)
     data = np.expand_dims(data, axis=-1)
     labels = np.array(labels)

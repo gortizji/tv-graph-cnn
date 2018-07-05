@@ -26,9 +26,9 @@ def _variable_summaries(var):
 def _batch_normalization(input, is_training=True, scope=None):
     # Note: is_training is tf.placeholder(tf.bool) type
     return tf.cond(is_training,
-                   lambda: tf.contrib.layers.batch_norm(input, is_training=True, decay=0.9,
+                   lambda: tf.contrib.layers.batch_norm(input, is_training=True, decay=0.8,
                                                         center=False, updates_collections=None, scope=scope),
-                   lambda: tf.contrib.layers.batch_norm(input, is_training=False, decay=0.9,
+                   lambda: tf.contrib.layers.batch_norm(input, is_training=False, decay=0.8,
                                                         updates_collections=None, center=False, scope=scope,
                                                         reuse=True))
 

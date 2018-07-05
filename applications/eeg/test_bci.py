@@ -17,7 +17,7 @@ import tensorflow as tf
 from graph_utils.laplacian import initialize_laplacian_tensor
 from graph_utils.coarsening import coarsen, perm_data, keep_pooling_laplacians
 from applications.eeg.data_utils import create_spatial_eeg_graph
-from applications.eeg.bci_dataset import NUM_CLASSES, SAMPLES_PER_TRIAL, get_subject_dataset, get_full_dataset, MONTAGE
+from applications.eeg.bci_dataset import NUM_CLASSES, SAMPLE_SIZE, get_subject_dataset, get_full_dataset, MONTAGE
 from applications.eeg.models import deep_fir_tv_fc_fn
 
 from graph_utils.visualization import plot_tf_fir_filter
@@ -42,7 +42,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
     # Create data placeholders
     num_vertices, _ = L[0].get_shape()
-    x = tf.placeholder(tf.float32, [None, num_vertices, SAMPLES_PER_TRIAL, 1], name="x")
+    x = tf.placeholder(tf.float32, [None, num_vertices, SAMPLE_SIZE, 1], name="x")
     y_ = tf.placeholder(tf.uint8, name="labels")
     y_hot = tf.one_hot(y_, NUM_CLASSES)
 
@@ -123,7 +123,7 @@ def run_training(L, train_mb_source, test_mb_source):
                 epoch_count += 1
 
             # Write the summaries and print an overview fairly often.
-            if step % 3 == 0:
+            if step % 60 == 0:
                 # Print status to stdout.
                 accuracy_value = sess.run(accuracy, feed_dict=feed_dict)
                 print('Step %d: loss = %.2f accuracy = %.2f (%.3f sec)' % (step, loss_value, accuracy_value, duration))
@@ -241,10 +241,10 @@ def main(_):
         test_data, test_labels = get_full_dataset(False)
     else:
         test_data, test_labels = get_subject_dataset(FLAGS.subject_id, False)
-
     test_data = perm_data(test_data, perm)
     test_mb_source = MinibatchSource(test_data, test_labels, repeat=False)
     print(test_mb_source.dataset_length)
+
     if FLAGS.action == "train":
         params = vars(FLAGS)
         with open(os.path.join(FLAGS.log_dir, "params.json"), "w") as f:
@@ -316,7 +316,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=1e-5,
+        default=1e-3,
         help='Initial learning rate.'
     )
     parser.add_argument(
@@ -346,7 +346,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--batch_size',
         type=int,
-        default=24,
+        default=120,
         help='Minibatch size in samples.'
     )
     parser.add_argument(
@@ -370,7 +370,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--vertex_filter_orders',
         type=int,
-        default=[3, 3, 3, 3, 3],
+        default=[3, 3, 3],
         nargs="+",
         help='Convolution vertex order.'
     )
@@ -378,14 +378,14 @@ if __name__ == '__main__':
         '--time_filter_orders',
         type=int,
         nargs="+",
-        default=[5, 5, 5, 3, 3],
+        default=[3, 3, 3],
         help='Convolution time order.'
     )
     parser.add_argument(
         '--num_filters',
         type=int,
         nargs="+",
-        default=[16, 16, 16, 16, 16],
+        default=[16, 32, 64],
         help='Number of parallel convolutional filters.'
     )
     parser.add_argument(
@@ -398,14 +398,14 @@ if __name__ == '__main__':
         '--time_poolings',
         type=int,
         nargs="+",
-        default=[4, 4, 4, 4, 3],
+        default=[4, 4, 4],
         help='Time pooling sizes.'
     )
     parser.add_argument(
         "--vertex_poolings",
         type=int,
         nargs="+",
-        default=[1, 1, 1, 1, 1],
+        default=[1, 1, 2],
         help="Vertex pooling sizes"
     )
     FLAGS, unparsed = parser.parse_known_args()

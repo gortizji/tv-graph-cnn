@@ -320,7 +320,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=1e-4,
+        default=1e-3,
         help='Initial learning rate.'
     )
     parser.add_argument(
@@ -332,13 +332,13 @@ if __name__ == '__main__':
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.8,
+        default=1,
         help="Dropout keep_rate"
     )
     parser.add_argument(
         "--weight_decay",
         type=float,
-        default=10,
+        default=0,
         help="Weight decay strength"
     )
     parser.add_argument(

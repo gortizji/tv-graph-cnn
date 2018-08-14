@@ -58,13 +58,12 @@ def _cheb_conv_layer(x, L, vertex_filter_order, num_filters):
 
 
 def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filters, time_poolings,
-                      vertex_poolings, num_classes):
+                      vertex_poolings, num_classes, dropout):
     assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters) == len(time_poolings), \
         "Filter parameters should all be of the same length"
 
     n_layers = len(time_filter_orders)
     phase = tf.placeholder(tf.bool, name="phase")
-    keep_prob = tf.placeholder(tf.float32, name="keep_prob")
 
     # Convolutional layers
     drop = x
@@ -93,7 +92,7 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
                 vpool = tpool
 
         with tf.name_scope("drop%d" % n):
-            drop = tf.nn.dropout(vpool, keep_prob=keep_prob)
+            drop = tf.layers.dropout(vpool, rate=dropout, training=phase)
 
     # Last fully connected layer
     with tf.name_scope("fc1"):
@@ -107,16 +106,15 @@ def deep_fir_tv_fc_fn(x, L, time_filter_orders, vertex_filter_orders, num_filter
         )
         fc = tf.identity(fc, name="fc2")
 
-    return fc, phase, keep_prob
+    return fc, phase
 
 
-def deep_cheb_fc_fn(x, L, vertex_filter_orders, num_filters, vertex_poolings):
+def deep_cheb_fc_fn(x, L, vertex_filter_orders, num_filters, vertex_poolings, dropout):
     assert len(vertex_filter_orders) == len(num_filters) == len(vertex_poolings), \
         "Filter parameters should all be of the same length"
 
     n_layers = len(vertex_filter_orders)
     phase = tf.placeholder(tf.bool, name="phase")
-    keep_prob = tf.placeholder(tf.float32, name="keep_prob")
 
     # Convolutional layers
     drop = x
@@ -138,7 +136,7 @@ def deep_cheb_fc_fn(x, L, vertex_filter_orders, num_filters, vertex_poolings):
                 vpool = conv
 
         with tf.name_scope("drop%d" % n):
-            drop = tf.nn.dropout(vpool, keep_prob=keep_prob)
+            drop = tf.layers.dropout(vpool, rate=dropout, training=phase)
 
     # Last fully connected layer
     with tf.name_scope("fc"):
@@ -152,6 +150,6 @@ def deep_cheb_fc_fn(x, L, vertex_filter_orders, num_filters, vertex_poolings):
         )
 
         fc = tf.identity(fc, "fc")
-    return fc, phase, keep_prob
+    return fc, phase
 
 

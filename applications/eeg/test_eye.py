@@ -29,9 +29,9 @@ EPOCH_SIZE = 0
 NUM_CLASSES = 2
 
 
-def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
+def _fill_feed_dict(mb_source, x, y, phase, is_training):
     (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
-    feed_dict = {x: data, y: labels, dropout: FLAGS.dropout if is_training else 1, phase: is_training}
+    feed_dict = {x: data, y: labels, phase: is_training}
     still_data = not is_end
     return feed_dict, still_data
 
@@ -48,21 +48,23 @@ def run_training(L, train_mb_source, test_mb_source):
     # Initialize model
     if FLAGS.model_type == "deep_fir":
         print("Training deep FIR-TV model...")
-        out, phase, dropout = deep_fir_tv_fc_fn(x=x_,
-                                                L=L,
-                                                time_filter_orders=FLAGS.time_filter_orders,
-                                                vertex_filter_orders=FLAGS.vertex_filter_orders,
-                                                num_filters=FLAGS.num_filters,
-                                                time_poolings=FLAGS.time_poolings,
-                                                vertex_poolings=FLAGS.vertex_poolings)
+        out, phase = deep_fir_tv_fc_fn(x=x_,
+                                       L=L,
+                                       time_filter_orders=FLAGS.time_filter_orders,
+                                       vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                       num_filters=FLAGS.num_filters,
+                                       time_poolings=FLAGS.time_poolings,
+                                       vertex_poolings=FLAGS.vertex_poolings,
+                                       dropout=FLAGS.dropout)
         out = tf.squeeze(out)
     elif FLAGS.model_type == "deep_cheb":
         print("Training deep FIR-TV model...")
-        out, phase, dropout = deep_cheb_fc_fn(x=x_,
-                                              L=L,
-                                              vertex_filter_orders=FLAGS.vertex_filter_orders,
-                                              num_filters=FLAGS.num_filters,
-                                              vertex_poolings=FLAGS.vertex_poolings)
+        out, phase = deep_cheb_fc_fn(x=x_,
+                                     L=L,
+                                     vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                     num_filters=FLAGS.num_filters,
+                                     vertex_poolings=FLAGS.vertex_poolings,
+                                     dropout=FLAGS.dropout)
         out = tf.squeeze(out)
     else:
         raise ValueError("model_type not valid.")
@@ -116,7 +118,7 @@ def run_training(L, train_mb_source, test_mb_source):
 
             start_time = time.time()
 
-            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y, dropout, phase, True)
+            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y, phase, True)
 
             # Perform one training iteration
             _, loss_value = sess.run([opt_train, loss],
@@ -145,7 +147,7 @@ def run_training(L, train_mb_source, test_mb_source):
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model')
                 saver.save(sess, checkpoint_file, global_step=step)
 
-                test_accuracy = _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source)
+                test_accuracy = _eval_metric(sess, correct_prediction, phase, x, y, test_mb_source)
 
                 test_summary = tf.Summary(value=[tf.Summary.Value(tag="test_accuracy", simple_value=test_accuracy)])
                 test_writer.add_summary(test_summary, step)
@@ -159,12 +161,12 @@ def run_training(L, train_mb_source, test_mb_source):
                     print("--------------------")
 
 
-def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source):
+def _eval_metric(sess, correct_prediction, phase, x, y, test_mb_source):
     still_data = True
     test_correct_predictions = []
     test_mb_source.restart()
     while still_data:
-        test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y, dropout, phase, False)
+        test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y, phase, False)
         if still_data is False:
             break
         test_correct_predictions.append(sess.run(correct_prediction, feed_dict=test_feed_dict))
@@ -212,7 +214,7 @@ def main(_):
     # Initialize data
     X, y = load_data()
     G = create_spatial_eeg_graph(MONTAGE, q=FLAGS.q, k=FLAGS.k)
-    #G = create_data_eeg_graph(MONTAGE, X)
+    # G = create_data_eeg_graph(MONTAGE, X)
     G.compute_laplacian("normalized")
 
     if FLAGS.action == "train":

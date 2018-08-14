@@ -20,11 +20,12 @@ def plot_joint_spectrum(x, G, file=None, Nfft=None):
     xflambda = np.fft.fftshift(xflambda)
 
     fig = plt.figure()
-    plt.imshow(np.abs(xflambda), origin="lower", extent=[-T // 2, T // 2, 0, N - 1], aspect=T/N)
-    plt.colorbar()
-    plt.title("JFT(x)")
-    plt.xlabel("f")
-    plt.ylabel("lambda")
+    plt.imshow(20*np.log10(np.abs(xflambda)), origin="lower", extent=[-T // 2, T // 2, 0, N - 1], aspect=T/N)
+    plt.axis("off")
+    #plt.colorbar()
+    #plt.title("JFT(x)")
+    #plt.xlabel("f")
+    #plt.ylabel("lambda")
     if file is not None:
         fig.savefig(file + ".png")
 
@@ -33,10 +34,11 @@ def plot_temporal_matrix(x, file=None):
     fig = plt.figure()
     N, T = x.shape
     plt.imshow(x, origin="lower", aspect=T/N)
-    plt.colorbar()
-    plt.title("Signal x")
-    plt.xlabel("t")
-    plt.ylabel("v")
+    #plt.colorbar()
+    #plt.title("Signal x")
+    #plt.xlabel("t")
+    #plt.ylabel("v")
+    plt.axis("off")
     if file is not None:
         fig.savefig(file + ".png")
 
@@ -133,31 +135,34 @@ if __name__ == '__main__':
     f_l = 15
     lambda_h = 80
     lambda_l = 15
-    # G = graphs.Community(N)
-    # x, _ = generate_spectral_samples_hard(1, T, G, f_h, lambda_h, f_l, lambda_l, sigma=2, sigma_n=1)
-    # # x = hp_hp_sample(T, G, f_h, lambda_h)
-    # plot_joint_spectrum(x[0, :, :, 0], G, "hp_hp")
-    # plot_temporal_matrix(x[0, :, :, 0], "hp_hp_t")
-    # # x = lp_lp_sample(T, G, f_l, lambda_l)
-    # plot_joint_spectrum(x[1, :, :, 0], G, "lp_lp")
-    # plot_temporal_matrix(x[1, :, :, 0], "lp_lp_t")
-    # # x = hp_lp_sample(T, G, f_h, lambda_l)
-    # plot_joint_spectrum(x[2, :, :, 0], G, "lp_hp")
-    # plot_temporal_matrix(x[2, :, :, 0], "lp_hp_t")
-    # # x = lp_hp_sample(T, G, f_l, lambda_h)
-    # plot_joint_spectrum(x[3, :, :, 0], G, "hp_lp")
-    # plot_temporal_matrix(x[3, :, :, 0], "hp_lp_t")
-    # # Combinations
-    # plot_joint_spectrum(x[4, :, :, 0], G, "lp_hp_hp_lp")
-    # plot_temporal_matrix(x[4, :, :, 0], "lp_hp_hp_lp_t")
-    # # x = lp_hp_sample(T, G, f_l, lambda_h)
-    # plot_joint_spectrum(x[5, :, :, 0], G, "hp_hp_lp_lp")
-    # plot_temporal_matrix(x[5, :, :, 0], "hp_hp_lp_lp_t")
-    # plot_tv_fir_frequency_response(np.random.randn(3, 3), file="seaborn")
+    G = graphs.Community(N, seed=15)
+    x, _ = generate_spectral_samples_hard(1, T, G, f_h, lambda_h, f_l, lambda_l, sigma=2, sigma_n=0.001)
+    # x = hp_hp_sample(T, G, f_h, lambda_h)
+    plot_joint_spectrum(x[0, :, :, 0], G, "hp_hp")
+    plot_temporal_matrix(x[0, :, :, 0], "hp_hp_t")
+    # x = lp_lp_sample(T, G, f_l, lambda_l)
+    plot_joint_spectrum(x[1, :, :, 0], G, "lp_lp")
+    plot_temporal_matrix(x[1, :, :, 0], "lp_lp_t")
+    # x = hp_lp_sample(T, G, f_h, lambda_l)
+    plot_joint_spectrum(x[2, :, :, 0], G, "lp_hp")
+    plot_temporal_matrix(x[2, :, :, 0], "lp_hp_t")
+    # x = lp_hp_sample(T, G, f_l, lambda_h)
+    plot_joint_spectrum(x[3, :, :, 0], G, "hp_lp")
+    plot_temporal_matrix(x[3, :, :, 0], "hp_lp_t")
+    # Combinations
+    plot_joint_spectrum(x[4, :, :, 0], G, "lp_hp_hp_lp")
+    plot_temporal_matrix(x[4, :, :, 0], "lp_hp_hp_lp_t")
+    # x = lp_hp_sample(T, G, f_l, lambda_h)
+    plot_joint_spectrum(x[5, :, :, 0], G, "hp_hp_lp_lp")
+    plot_temporal_matrix(x[5, :, :, 0], "hp_hp_lp_lp_t")
+    #plot_tv_fir_frequency_response(np.random.randn(3, 3), file="seaborn")
 
-    fig = plt.figure()
-    for n in range(100):
-        plt.subplot(10, 10, n+1)
-        plot_tv_fir_frequency_response(np.random.randn(3, 6), with_axis=False)
 
-    fig.savefig("many.png")
+
+    #G.plot_signal(x[1, :, 1, 0], backend='matplotlib')
+    #fig = plt.gcf()
+    #for n in range(100):
+    #    plt.subplot(10, 10, n+1)
+    #    plot_tv_fir_frequency_response(np.random.randn(3, 6), with_axis=False)
+
+    #fig.savefig("signal.png")

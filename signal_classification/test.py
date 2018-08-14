@@ -53,7 +53,8 @@ def run_training(L, train_mb_source, test_mb_source):
                                           vertex_filter_orders=FLAGS.vertex_filter_orders,
                                           num_filters=FLAGS.num_filters,
                                           time_poolings=FLAGS.time_poolings,
-                                          vertex_poolings=FLAGS.vertex_poolings)
+                                          vertex_poolings=FLAGS.vertex_poolings,
+                                          shot_noise=FLAGS.shot_noise)
         dropout = tf.placeholder(tf.float32, name="keep_prob")
     elif FLAGS.model_type == "deep_cheb":
         print("Training deep Chebyshev time invariant model...")
@@ -63,7 +64,8 @@ def run_training(L, train_mb_source, test_mb_source):
                                         num_classes=FLAGS.num_classes,
                                         vertex_filter_orders=FLAGS.vertex_filter_orders,
                                         num_filters=FLAGS.num_filters,
-                                        vertex_poolings=FLAGS.vertex_poolings)
+                                        vertex_poolings=FLAGS.vertex_poolings,
+                                        shot_noise=FLAGS.shot_noise)
         dropout = tf.placeholder(tf.float32, name="keep_prob")
     elif FLAGS.model_type == "fc":
         print("Training linear classifier model...")
@@ -321,7 +323,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--model_type",
         type=str,
-        default="deep_fir",
+        default="deep_cheb",
         help="Model type"
     )
     parser.add_argument(
@@ -377,6 +379,12 @@ if __name__ == '__main__':
         help="Seed to create the random graph"
     )
     parser.add_argument(
+        "--shot_noise",
+        type=float,
+        default=1,
+        help="Probability of missing entry"
+    )
+    parser.add_argument(
         '--num_vertices',
         type=int,
         default=100,
@@ -391,7 +399,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--vertex_filter_orders',
         type=int,
-        default=[3, 3, 3],
+        default=[4, 4, 4],
         nargs="+",
         help='Convolution vertex order.'
     )

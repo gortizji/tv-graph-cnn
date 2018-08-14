@@ -22,7 +22,6 @@ from applications.eeg.models import deep_fir_tv_fc_fn
 
 from graph_utils.visualization import plot_tf_fir_filter
 
-
 FLAGS = None
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
 TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "../experiments"))
@@ -30,9 +29,9 @@ TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "../experiments"))
 EPOCH_SIZE = 0
 
 
-def _fill_feed_dict(mb_source, x, y, dropout, phase, is_training):
+def _fill_feed_dict(mb_source, x, y, phase, is_training):
     (data, labels), is_end = mb_source.next_batch(FLAGS.batch_size)
-    feed_dict = {x: data, y: labels, dropout: FLAGS.dropout if is_training else 1, phase: is_training}
+    feed_dict = {x: data, y: labels, phase: is_training}
     still_data = not is_end
     return feed_dict, still_data
 
@@ -49,14 +48,16 @@ def run_training(L, train_mb_source, test_mb_source):
     # Initialize model
     if FLAGS.model_type == "deep_fir":
         print("Training deep FIR-TV model...")
-        logits, phase, dropout = deep_fir_tv_fc_fn(x=x,
-                                                   L=L,
-                                                   num_classes=NUM_CLASSES,
-                                                   time_filter_orders=FLAGS.time_filter_orders,
-                                                   vertex_filter_orders=FLAGS.vertex_filter_orders,
-                                                   num_filters=FLAGS.num_filters,
-                                                   time_poolings=FLAGS.time_poolings,
-                                                   vertex_poolings=FLAGS.vertex_poolings)
+        logits, phase = deep_fir_tv_fc_fn(x=x,
+                                          L=L,
+                                          num_classes=NUM_CLASSES,
+                                          time_filter_orders=FLAGS.time_filter_orders,
+                                          vertex_filter_orders=FLAGS.vertex_filter_orders,
+                                          num_filters=FLAGS.num_filters,
+                                          time_poolings=FLAGS.time_poolings,
+                                          vertex_poolings=FLAGS.vertex_poolings,
+                                          dropout=FLAGS.dropout
+                                          )
     else:
         raise ValueError("model_type not valid.")
 
@@ -102,14 +103,13 @@ def run_training(L, train_mb_source, test_mb_source):
 
         MAX_STEPS = FLAGS.num_epochs * EPOCH_SIZE // FLAGS.batch_size
 
-
         # Start training loop
         epoch_count = 0
         for step in range(MAX_STEPS):
 
             start_time = time.time()
 
-            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y_, dropout, phase, True)
+            feed_dict, _ = _fill_feed_dict(train_mb_source, x, y_, phase, True)
 
             # Perform one training iteration
             _, loss_value = sess.run([opt_train, loss],
@@ -137,7 +137,7 @@ def run_training(L, train_mb_source, test_mb_source):
                 checkpoint_file = os.path.join(FLAGS.log_dir, 'model')
                 saver.save(sess, checkpoint_file, global_step=step)
 
-                test_accuracy = _eval_metric(sess, correct_prediction, dropout, phase, x, y_, test_mb_source)
+                test_accuracy = _eval_metric(sess, correct_prediction, phase, x, y_, test_mb_source)
 
                 test_summary = tf.Summary(value=[tf.Summary.Value(tag="test_accuracy", simple_value=test_accuracy)])
                 test_writer.add_summary(test_summary, step)
@@ -151,12 +151,12 @@ def run_training(L, train_mb_source, test_mb_source):
                     print("--------------------")
 
 
-def _eval_metric(sess, correct_prediction, dropout, phase, x, y, test_mb_source):
+def _eval_metric(sess, correct_prediction, phase, x, y, test_mb_source):
     still_data = True
     test_correct_predictions = []
     test_mb_source.restart()
     while still_data:
-        test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y, dropout, phase, False)
+        test_feed_dict, still_data = _fill_feed_dict(test_mb_source, x, y, phase, False)
         test_correct_predictions.append(sess.run(correct_prediction, feed_dict=test_feed_dict))
 
     return np.mean(test_correct_predictions)
@@ -172,13 +172,12 @@ def run_eval(test_mb_source):
         # Get inputs
         x = graph.get_tensor_by_name("x:0")
         y = graph.get_tensor_by_name("labels:0")
-        keep_prob = graph.get_tensor_by_name("keep_prob:0")
         phase = graph.get_tensor_by_name("phase:0")
 
         # Get output
         correct_prediction = graph.get_tensor_by_name("metric/correct_prediction:0")
 
-        print("Evaluation accuracy: %.2f" % _eval_metric(sess, correct_prediction, keep_prob, phase, x, y,
+        print("Evaluation accuracy: %.2f" % _eval_metric(sess, correct_prediction, phase, x, y,
                                                          test_mb_source))
 
         for idx, v in enumerate([v for v in tf.trainable_variables() if "conv" in v.name]):
@@ -328,8 +327,8 @@ if __name__ == '__main__':
     parser.add_argument(
         "--dropout",
         type=float,
-        default=1,
-        help="Dropout keep_rate"
+        default=0.1,
+        help="Dropout rate"
     )
     parser.add_argument(
         "--q",

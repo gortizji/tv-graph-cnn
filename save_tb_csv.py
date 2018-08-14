@@ -4,13 +4,13 @@ import json
 import seaborn as sns
 
 EXPERIMENTS_DIR = "signal_classification/experiments"
-BATCHES_DIR = os.path.join(os.curdir, EXPERIMENTS_DIR, "different_sizes")
+BATCHES_DIR = os.path.join(os.curdir, EXPERIMENTS_DIR, "different_dropout_1200")
 CSV_DIR = os.path.join(os.curdir, EXPERIMENTS_DIR)
 
-BATCHES = [1, 2, 3, 4]
+BATCHES = [0, 1, 2, 3, 4, 5]
 
 
-final = pd.DataFrame(columns=["num_train", "type", "test", "train"])
+final = pd.DataFrame(columns=["shot_noise", "type", "test", "train"])
 
 
 for batch_dir in os.listdir(BATCHES_DIR):
@@ -31,24 +31,24 @@ for batch_dir in os.listdir(BATCHES_DIR):
                             continue
                         with open(os.path.join(exp_dir, "params.json")) as f:
                             params = json.load(f)
-                        dict["num_train"] = [params["num_train"]]
+                        dict["shot_noise"] = [params["shot_noise"]]
                         for phase in ["test", "train"]:
                             test_path = os.path.join(exp_dir, phase)
-                            # os.system("python exportTensorFlowLog.py " + test_path + " " + test_path + " scalars")
+                            #os.system("python exportTensorFlowLog.py " + test_path + " " + test_path + " scalars")
                             df = pd.read_csv(test_path + "/scalars.csv")
                             if phase == "test":
-                                #print(df.tail(1).iloc[0])
+                                print(df.tail(1).iloc[0])
                                 test_accuracy = df.tail(1).iloc[0]["test_accuracy"]
                                 dict["test"] = [test_accuracy]
                             else:
                                 train_accuracy = df.tail(1).iloc[0]["metric/accuracy_1"]
                                 dict["train"] = [train_accuracy]
-                                #print(dict["train"])
+                                print(dict["train"])
                         final = final.append(pd.DataFrame(dict), ignore_index=True)
-                        #print(final)
+                        print(final)
 
 final.to_csv(os.path.join(CSV_DIR, 'data_frame_sizes.csv'), sep=",")
-print(final.pivot_table(index="num_train", columns="type", values="test"))
+print(final.pivot_table(index="shot_noise", columns="type", values="test"))
 sns.set(style="whitegrid", color_codes=True)
-sns_plot = sns.factorplot(x="num_train", y="test", hue="type", data=final, kind="bar")
+sns_plot = sns.factorplot(x="shot_noise", y="test", hue="type", data=final, kind="bar")
 sns_plot.savefig(CSV_DIR + "/plot.png")

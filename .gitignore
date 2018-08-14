@@ -191,7 +191,8 @@ fabric.properties
 # Data related files
 *.json
 *.npy
-
+*.mat
 */datasets
 *.png
 *.arff
+*.jpg

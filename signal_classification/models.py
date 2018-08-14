@@ -55,7 +55,7 @@ def _batch_normalization(input, is_training=True, scope=None):
 
 
 def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_orders, num_filters, time_poolings,
-                      vertex_poolings):
+                      vertex_poolings, shot_noise=1):
     assert len(time_filter_orders) == len(vertex_filter_orders) == len(num_filters) == len(time_poolings), \
         "Filter parameters should all be of the same length"
 
@@ -63,7 +63,8 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
     phase = tf.placeholder(tf.bool, name="phase")
 
     # Convolutional layers
-    vpool = x
+    vpool = tf.nn.dropout(x, shot_noise)
+    # vpool = x
     for n in range(n_layers):
         with tf.name_scope("conv%d" % n):
             conv = _fir_tv_layer(vpool, L[n], time_filter_orders[n], vertex_filter_orders[n], num_filters[n])
@@ -101,7 +102,7 @@ def deep_fir_tv_fc_fn(x, L, num_classes, time_filter_orders, vertex_filter_order
     return fc, phase
 
 
-def deep_cheb_fc_fn(x, L, num_classes, vertex_filter_orders, num_filters, vertex_poolings):
+def deep_cheb_fc_fn(x, L, num_classes, vertex_filter_orders, num_filters, vertex_poolings, shot_noise=1):
     assert len(vertex_filter_orders) == len(num_filters) == len(vertex_poolings), \
         "Filter parameters should all be of the same length"
 
@@ -109,7 +110,8 @@ def deep_cheb_fc_fn(x, L, num_classes, vertex_filter_orders, num_filters, vertex
     phase = tf.placeholder(tf.bool, name="phase")
 
     # Convolutional layers
-    vpool = x
+    vpool = tf.nn.dropout(x, shot_noise)
+    # vpool = x
     for n in range(n_layers):
         with tf.name_scope("conv%d" % n):
             conv = _cheb_conv_layer(vpool, L[n], vertex_filter_orders[n], num_filters[n])

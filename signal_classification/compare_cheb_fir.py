@@ -3,7 +3,7 @@ import json
 
 
 FILEDIR = os.path.dirname(os.path.realpath(__file__))
-TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "experiments"))
+TEMPDIR = os.path.realpath(os.path.join(FILEDIR, "experiments/different_dropout"))
 
 
 def _next_batch(log_dir):
@@ -19,7 +19,7 @@ def _next_batch(log_dir):
 
 
 if __name__ == '__main__':
-    num_batches = 3
+    num_batches = 6
 
     # Batch parameters
     params = {
@@ -41,11 +41,12 @@ if __name__ == '__main__':
         "--f_l": 15,
         "--lambda_h": 80,
         "--lambda_l": 15,
-        "--action": "train"
+        "--action": "train",
+        "--sigma_n": 0.75
     }
 
     models = ["deep_cheb", "deep_fir"]
-    noises = [0.5, 1, 1.5, 2, 2.5]
+    shot_noises = [0.1, 0.3, 0.5, 0.75, 0.9]
 
     for batch in range(num_batches):
         params["--log_dir"] = os.path.join(TEMPDIR, "batch_"+str(_next_batch(TEMPDIR)))
@@ -61,11 +62,11 @@ if __name__ == '__main__':
             else:
                 params["--vertex_filter_orders"] = [3, 3, 3]
 
-            for sigma_n in noises:
+            for shot_noise in shot_noises:
                 args = []
 
                 params["--model_type"] = model
-                params["--sigma_n"] = sigma_n
+                params["--shot_noise"] = shot_noise
 
                 for arg_name, value in params.items():
                     if isinstance(value, list):
@@ -74,7 +75,7 @@ if __name__ == '__main__':
                         args.append(arg_name + " " + str(value))
 
                 print("****************************************************")
-                print("Simulating %s with sigma_n %.2f" % (model, sigma_n))
+                print("Simulating %s with shot_noise %.2f" % (model, shot_noise))
 
                 os.system("python signal_classification/test.py " + " ".join(args))
 

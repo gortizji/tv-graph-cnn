@@ -1,6 +1,56 @@
 import tensorflow as tf
 
 
+def sep_fir_filtering(x, S, ht, hv, hmimo, b, kernel="naive"):
+    """
+    Performs separable FIR-TV (Time-vertex) filtering using conv1d for time FIR
+    :param x: Input signal (row dim: time  col dim: vertex)
+    :param S: Graph Shift Operator (e.g. Laplacian)
+    :param ht: FIR time coefficients (M: Length time filter, F: Number of filters)
+    :param hv: FIR vertex coefficients (K: Length vertex filter, F: Number of filters)
+    :param hmimo: Channel combination matrix (C: In channels, F: Number of filters)
+    :return: Filtered signal
+    """
+
+    B, N, T, C = x.get_shape()  # B: number of samples in batch, N: number of nodes, T: temporal length, C: channels
+    K, F = hv.get_shape()  # K: Length vertex filter,  F: Number of filters
+    M, F = ht.get_shape()  # M: Length time filter, F: Number of filters
+    C, F = hmimo.get_shape()  # M: Length time filter, F: Number of filters
+
+    x = tf.transpose(x, perm=[0, 1,  3, 2])  # BxNxCxT
+    x = tf.expand_dims(x, axis=4)  # BxNxCxTx1
+    x = tf.reshape(x, shape=[-1, T, 1])  # BNCxTx1
+
+    x_convt = tf.nn.conv1d(x, tf.expand_dims(ht, axis=1), stride=1, padding="SAME", data_format="NHWC")  # BNCxTxF
+    x_convt = tf.reshape(x_convt, shape=[-1, N, C, T, F])  # BxNxCxTxF
+    x_convt = tf.transpose(x_convt, perm=[0, 1, 3, 2, 4])
+
+    with tf.name_scope("kernel_creation"):
+        if kernel == "naive":
+            SK = _vertex_fir_kernel(S, K)  # KxNxN
+        elif kernel == "chebyshev":
+            SK = _chebyshev_kernel(S, K)
+        else:
+            raise ValueError("Specified kernel type {} is not valid." % kernel)
+
+    # KxNxN, BxNxTxCxF -> BxKxNxTxCxF
+    # a b c  d c e f g -> d a b e f g
+    SKx = tf.einsum("abc,dcefg->dabefg", SK, x_convt)  # BxKxNxTxCxF
+    print(SKx.shape)
+    # KxF  BxKxNxTxCxF -> BxNxTxCxF
+    # a b  c a e f g b -> c e f g b
+    Yunmixed = tf.einsum("ab,caefgb->cefgb", hv, SKx)  # BxNxTxCxF
+    print(Yunmixed.shape)
+    # CxF  BxNxTxCxF -> BxNxTxF
+    # a b  c d e a b -> c d e b
+    Ymimo = tf.einsum("ab,cdeab->cdeb", hmimo, Yunmixed)
+    print(Ymimo.shape)
+
+    if b is not None:
+        Ymimo += b
+    return Ymimo
+
+
 def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
     """
     Performs FIR-TV (Time-vertex) filtering using left to right computations (using einsum for matrix multiplication)
@@ -12,7 +62,7 @@ def fir_tv_filtering_einsum(x, S, h, b, kernel="naive"):
     k=0
     :param x: Input signal (row dim: time  col dim: vertex)
     :param S: Graph Shift Operator (e.g. Laplacian)
-    :param h: FIR-TV coefficients (F: filters of lengths K: Vertex M: Time
+    :param h: FIR-TV coefficients (F: filters of lengths K: Vertex M: Time)
     :return: Filtered signal
     """
     B, N, T, C = x.get_shape()  # B: number of samples in batch, N: number of nodes, T: temporal length, C: channels
